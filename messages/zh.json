@@ -1,0 +1,59 @@
+{
+	"nav": {
+		"models": "模型",
+		"pricing": "价格",
+		"docs": "文档",
+		"login": "登录",
+		"signup": "注册",
+		"dashboard": "控制面板"
+	},
+	"auth": {
+		"loginTitle": "欢迎回来",
+		"loginSubtitle": "登录您的 Nexor AI 账户",
+		"signupTitle": "创建您的账户",
+		"signupSubtitle": "几秒钟内开始使用免费套餐",
+		"email": "电子邮件",
+		"password": "密码",
+		"confirmPassword": "确认密码",
+		"loginAction": "登录",
+		"signupAction": "创建账户",
+		"noAccount": "还没有账户？",
+		"haveAccount": "已有账户？",
+		"passwordMismatch": "两次输入的密码不一致",
+		"invalidCredentials": "电子邮件或密码无效",
+		"emailInUse": "该电子邮件已被注册"
+	},
+	"dashboard": {
+		"title": "控制面板",
+		"overview": "概览",
+		"apiKeys": "API 密钥",
+		"logs": "日志",
+		"plans": "套餐",
+		"purchases": "购买记录",
+		"endpoints": "接入点",
+		"docs": "文档",
+		"settings": "设置",
+		"welcome": "欢迎"
+	},
+	"admin": {
+		"title": "管理",
+		"providers": "提供商",
+		"models": "模型与分类",
+		"plans": "套餐",
+		"users": "用户",
+		"payments": "支付",
+		"coupons": "优惠券",
+		"announcements": "公告",
+		"gateways": "支付网关"
+	},
+	"common": {
+		"loading": "加载中…",
+		"save": "保存",
+		"cancel": "取消",
+		"delete": "删除",
+		"edit": "编辑",
+		"create": "创建",
+		"search": "搜索",
+		"logout": "退出登录"
+	}
+}

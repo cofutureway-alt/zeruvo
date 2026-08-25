@@ -1,0 +1,59 @@
+{
+	"nav": {
+		"models": "Modèles",
+		"pricing": "Tarifs",
+		"docs": "Documentation",
+		"login": "Connexion",
+		"signup": "S'inscrire",
+		"dashboard": "Tableau de bord"
+	},
+	"auth": {
+		"loginTitle": "Bon retour",
+		"loginSubtitle": "Connectez-vous à votre compte Nexor AI",
+		"signupTitle": "Créez votre compte",
+		"signupSubtitle": "Commencez avec le plan gratuit en quelques secondes",
+		"email": "E-mail",
+		"password": "Mot de passe",
+		"confirmPassword": "Confirmer le mot de passe",
+		"loginAction": "Se connecter",
+		"signupAction": "Créer un compte",
+		"noAccount": "Pas encore de compte ?",
+		"haveAccount": "Vous avez déjà un compte ?",
+		"passwordMismatch": "Les mots de passe ne correspondent pas",
+		"invalidCredentials": "E-mail ou mot de passe invalide",
+		"emailInUse": "Un compte avec cet e-mail existe déjà"
+	},
+	"dashboard": {
+		"title": "Tableau de bord",
+		"overview": "Aperçu",
+		"apiKeys": "Clés API",
+		"logs": "Journaux",
+		"plans": "Plans",
+		"purchases": "Achats",
+		"endpoints": "Points d'accès",
+		"docs": "Documentation",
+		"settings": "Paramètres",
+		"welcome": "Bienvenue"
+	},
+	"admin": {
+		"title": "Administration",
+		"providers": "Fournisseurs",
+		"models": "Modèles et catégories",
+		"plans": "Plans",
+		"users": "Utilisateurs",
+		"payments": "Paiements",
+		"coupons": "Coupons",
+		"announcements": "Annonces",
+		"gateways": "Passerelles de paiement"
+	},
+	"common": {
+		"loading": "Chargement…",
+		"save": "Enregistrer",
+		"cancel": "Annuler",
+		"delete": "Supprimer",
+		"edit": "Modifier",
+		"create": "Créer",
+		"search": "Rechercher",
+		"logout": "Déconnexion"
+	}
+}
