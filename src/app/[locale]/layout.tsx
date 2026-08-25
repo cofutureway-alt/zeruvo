@@ -5,6 +5,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Inter, IBM_Plex_Sans_Arabic, Manrope, Noto_Sans_SC } from 'next/font/google';
 import { routing } from '@/i18n/routing';
 import { isLocale, localeFonts, rtlLocales } from '@/i18n/config';
+import { AnnouncementsMount } from '@/components/announcements/mount';
 import '../globals.css';
 
 // Dedicated font per locale (product requirement — no shared font)
@@ -56,6 +57,7 @@ export default async function LocaleLayout(props: {
 				style={{ '--font-locale': localeFonts[locale] } as React.CSSProperties}
 			>
 				<NextIntlClientProvider>{props.children}</NextIntlClientProvider>
+				<AnnouncementsMount locale={locale} />
 			</body>
 		</html>
 	);

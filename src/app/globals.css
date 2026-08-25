@@ -33,3 +33,33 @@ body {
 	background: var(--nx-accent);
 	color: white;
 }
+
+/* Announcement marquee — seamless right-to-left scroll, RTL aware */
+@keyframes nx-marquee {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(-50%);
+	}
+}
+[dir='rtl'] .marquee-track {
+	animation-name: nx-marquee-rtl;
+}
+@keyframes nx-marquee-rtl {
+	from {
+		transform: translateX(-50%);
+	}
+	to {
+		transform: translateX(0);
+	}
+}
+.marquee-track {
+	animation: nx-marquee 30s linear infinite;
+	will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+	.marquee-track {
+		animation: none;
+	}
+}
