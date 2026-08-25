@@ -6,7 +6,13 @@ account_id = "06602a99fe023bcb459b2c06e355dfd6"
 [vars]
 SUPABASE_URL = "https://unacmcjzwxoyerllvdmt.supabase.co"
 
+# Internal binding to the mock provider (worker-to-worker without egress).
+# Real providers (openai/anthropic/openrouter) use plain fetch — they are not
+# on Cloudflare, so no loop protection applies to them.
+[[services]]
+binding = "MOCK_LLM"
+service = "nexor-mock-llm"
+
 # Secrets (set via `npx wrangler secret put`):
 #   SUPABASE_SERVICE_ROLE_KEY — service key for RPC quota calls
 #   NEXOR_ENCRYPTION_KEY      — AES-256-GCM DEK for provider keys
-# [secrets] are not declared in wrangler.toml

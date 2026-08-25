@@ -1,0 +1,4 @@
+name = "nexor-mock-llm"
+main = "mock-provider.js"
+compatibility_date = "2026-08-01"
+account_id = "06602a99fe023bcb459b2c06e355dfd6"
