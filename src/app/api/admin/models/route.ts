@@ -78,7 +78,7 @@ async function syncModels(admin: ReturnType<typeof createAdminClient>, providerI
 			provider_id: providerId,
 			upstream_model_id: id,
 			display_name: id,
-			slug: id,
+			slug: id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, ''),
 			usage_multiplier: 1,
 			enabled_for_users: false,
 		}));
