@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Check, ArrowUpRight } from 'lucide-react';
+import { CheckoutModal } from './checkout-modal';
 
 interface PlanPublic {
 	id: string;
@@ -26,6 +27,7 @@ export function PlansBrowser() {
 	const [models, setModels] = useState<ModelInfo[]>([]);
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
+	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string } | null>(null);
 	const [locale, setLocale] = useState('en');
 
 	useEffect(() => {
@@ -125,9 +127,7 @@ export function PlansBrowser() {
 							)}
 							<button
 								disabled={isCurrent}
-								onClick={() =>
-									alert('Checkout opens here in Phase 5 — Kashier integration.')
-								}
+								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en })}
 								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition ${
 									isCurrent
 										? 'cursor-default border border-indigo-500/50 text-indigo-400'
@@ -149,6 +149,17 @@ export function PlansBrowser() {
 					);
 				})}
 			</div>
+
+			{checkoutFor && (
+				<CheckoutModal
+					planId={checkoutFor.id}
+					planName={checkoutFor.name}
+					onClose={() => {
+						setCheckoutFor(null);
+						window.location.reload();
+					}}
+				/>
+			)}
 		</div>
 	);
 }
