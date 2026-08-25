@@ -33,7 +33,8 @@
 		"endpoints": "Points d'accès",
 		"docs": "Documentation",
 		"settings": "Paramètres",
-		"welcome": "Bienvenue"
+		"welcome": "Bienvenue",
+		"logout": "Déconnexion"
 	},
 	"admin": {
 		"title": "Administration",

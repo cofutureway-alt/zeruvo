@@ -27,12 +27,12 @@ export function DashboardShell(props: {
 	email: string;
 	isAdmin: boolean;
 }) {
-	const t = useTranslations('common');
+	const t = useTranslations('dashboard');
 	const router = useRouter();
 
 	async function logout() {
 		await createClient().auth.signOut();
-		router.replace('/en/login');
+		router.replace('/login');
 	}
 
 	return (

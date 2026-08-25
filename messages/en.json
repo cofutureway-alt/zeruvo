@@ -33,7 +33,8 @@
 		"endpoints": "Endpoints",
 		"docs": "Docs",
 		"settings": "Settings",
-		"welcome": "Welcome"
+		"welcome": "Welcome",
+		"logout": "Log out"
 	},
 	"admin": {
 		"title": "Admin",

@@ -1,14 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 export function LoginForm() {
 	const t = useTranslations('auth');
 	const router = useRouter();
-	const locale = useLocale();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [error, setError] = useState<string | null>(null);
@@ -25,7 +24,7 @@ export function LoginForm() {
 			setBusy(false);
 			return;
 		}
-		router.replace(`/${locale}/dashboard`);
+		router.replace('/dashboard');
 		router.refresh();
 	}
 

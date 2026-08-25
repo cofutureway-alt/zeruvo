@@ -1,14 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 export function SignupForm() {
 	const t = useTranslations('auth');
 	const router = useRouter();
-	const locale = useLocale();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [confirm, setConfirm] = useState('');
@@ -31,7 +30,7 @@ export function SignupForm() {
 			return;
 		}
 		// Email confirmation disabled in dev → session may exist immediately.
-		router.replace(`/${locale}/dashboard`);
+		router.replace('/dashboard');
 		router.refresh();
 	}
 
