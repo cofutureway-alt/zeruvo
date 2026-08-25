@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "sources": ["../src/index.ts"],
+  "sourceRoot": "dist",
+  "sourcesContent": ["/**\n * Nexor AI Gateway \u2014 Cloudflare Worker\n * Unified AI gateway hot path: /v1/chat/completions (OpenAI), /v1/messages\n * (Anthropic), /v1beta/models/{m}:generateContent (Gemini), GET /v1/models.\n *\n * Phase 2 will fill in auth/quota/adapters/stream modules. This placeholder\n * proves deployment wiring end-to-end.\n */\n\nexport default {\n\tasync fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {\n\t\tconst url = new URL(request.url);\n\t\tif (url.pathname === \"/health\") {\n\t\t\treturn Response.json({ ok: true, service: \"nexor-gateway\" });\n\t\t}\n\t\treturn Response.json(\n\t\t\t{ error: { type: \"not_found\", message: `No route for ${url.pathname}` } },\n\t\t\t{ status: 404 },\n\t\t);\n\t},\n};\n\nexport interface Env {\n\tSUPABASE_URL: string;\n\tSUPABASE_SERVICE_ROLE_KEY?: string;\n\tNEXOR_ENCRYPTION_KEY?: string;\n}\n"],
+  "mappings": ";AASA,IAAO,gBAAQ;AAAA,EACd,MAAM,MAAM,SAAkB,KAAU,KAA0C;AACjF,UAAM,MAAM,IAAI,IAAI,QAAQ,GAAG;AAC/B,QAAI,IAAI,aAAa,WAAW;AAC/B,aAAO,SAAS,KAAK,EAAE,IAAI,MAAM,SAAS,gBAAgB,CAAC;AAAA,IAC5D;AACA,WAAO,SAAS;AAAA,MACf,EAAE,OAAO,EAAE,MAAM,aAAa,SAAS,gBAAgB,IAAI,QAAQ,GAAG,EAAE;AAAA,MACxE,EAAE,QAAQ,IAAI;AAAA,IACf;AAAA,EACD;AACD;",
+  "names": []
+}

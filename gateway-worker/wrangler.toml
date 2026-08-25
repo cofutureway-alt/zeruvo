@@ -1,0 +1,12 @@
+name = "nexor-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+account_id = "06602a99fe023bcb459b2c06e355dfd6"
+
+[vars]
+SUPABASE_URL = "https://unacmcjzwxoyerllvdmt.supabase.co"
+
+# Secrets (set via `npx wrangler secret put`):
+#   SUPABASE_SERVICE_ROLE_KEY — service key for RPC quota calls
+#   NEXOR_ENCRYPTION_KEY      — AES-256-GCM DEK for provider keys
+# [secrets] are not declared in wrangler.toml
