@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, LayoutGrid } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { SkeletonModelGrid } from '../../components/skeleton';
 
 interface ModelRow {
 	id: string;
@@ -17,6 +18,7 @@ interface ModelRow {
 
 export default function Models() {
 	const [models, setModels] = useState<ModelRow[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [categories, setCategories] = useState<Array<{ name: string; icon_url: string | null }>>([]);
 	const [query, setQuery] = useState('');
 	const [category, setCategory] = useState('all');
@@ -49,6 +51,7 @@ export default function Models() {
 				}),
 			);
 			setCategories(catRows ?? []);
+			setLoading(false);
 		})();
 	}, []);
 
@@ -128,6 +131,9 @@ export default function Models() {
 				{filtered.length} model{filtered.length === 1 ? '' : 's'}
 			</p>
 
+			{loading ? (
+				<SkeletonModelGrid count={9} />
+			) : (
 			<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{filtered.map((m) => (
 					<Link
@@ -150,7 +156,8 @@ export default function Models() {
 				))}
 			</div>
 
-			{filtered.length === 0 && (
+			)}
+			{!loading && filtered.length === 0 && (
 				<p className="mt-16 flex items-center justify-center gap-2 text-sm text-[var(--nx-muted)]">
 					<LayoutGrid size={15} /> No models match.
 				</p>

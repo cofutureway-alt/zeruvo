@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './index.css';
 import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
-import { ProtectedRoute, AdminRoute } from './routes/guards';
+import { ProtectedRoute, AdminRoute, GuestRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
 import Home from './pages/marketing/Home';
 import Models from './pages/marketing/Models';
@@ -51,9 +51,23 @@ function App() {
 					<Route path="/models/:slug" element={<ModelDetail />} />
 					<Route path="/pricing" element={<Pricing />} />
 					<Route path="/docs" element={<Docs />} />
-					{/* auth */}
-					<Route path="/login" element={<Login />} />
-					<Route path="/signup" element={<Signup />} />
+					{/* auth — signed-in users are redirected to their dashboard */}
+					<Route
+						path="/login"
+						element={
+							<GuestRoute>
+								<Login />
+							</GuestRoute>
+						}
+					/>
+					<Route
+						path="/signup"
+						element={
+							<GuestRoute>
+								<Signup />
+							</GuestRoute>
+						}
+					/>
 					{/* user dashboard */}
 					<Route
 						path="/dashboard"

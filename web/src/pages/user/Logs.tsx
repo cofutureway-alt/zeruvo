@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
+import { SkeletonTable } from '../../components/skeleton';
 
 interface LogRow {
 	id: number;
@@ -16,6 +17,7 @@ interface LogRow {
 export default function Logs() {
 	const [email, setEmail] = useState('');
 	const [logs, setLogs] = useState<LogRow[]>([]);
+	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
 		void (async () => {
@@ -28,6 +30,7 @@ export default function Logs() {
 				.order('created_at', { ascending: false })
 				.limit(100);
 			setLogs((data ?? []) as LogRow[]);
+			setLoading(false);
 		})();
 	}, []);
 
@@ -39,6 +42,7 @@ export default function Logs() {
 					<p className="mt-0.5 text-sm text-[var(--nx-muted)]">Last 100 gateway requests.</p>
 				</header>
 
+				{loading ? <SkeletonTable rows={8} cols={7} /> : (
 				<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
 					<table className="w-full min-w-[640px] text-sm">
 						<thead className="bg-zinc-900/60 text-xs uppercase tracking-wide text-[var(--nx-muted)]">
@@ -79,7 +83,8 @@ export default function Logs() {
 							)}
 						</tbody>
 					</table>
-				</div>
+					</div>
+				)}
 			</div>
 		</DashboardShell>
 	);

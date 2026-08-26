@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, ArrowUpRight, X, Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
+import { SkeletonPlans } from '../../components/skeleton';
 
 interface PlanPublic {
 	id: string;
@@ -23,6 +24,7 @@ export default function PlansBrowser() {
 	const { i18n } = useTranslation();
 	const locale = i18n.language;
 	const [plans, setPlans] = useState<PlanPublic[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string }>>([]);
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
@@ -52,12 +54,14 @@ export default function PlansBrowser() {
 					.maybeSingle();
 				setCurrentPlanId(sub?.plan_id ?? null);
 			}
+			setLoading(false);
 		})();
 	}, []);
 
 	return (
 		<>
-			<div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+			{loading ? <SkeletonPlans count={3} /> : (
+		<div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 				{plans.map((p) => {
 					const isCurrent = p.id === currentPlanId;
 					const ids = planModels[p.id] ?? [];
@@ -115,7 +119,8 @@ export default function PlansBrowser() {
 						</article>
 					);
 				})}
-			</div>
+		</div>
+		)}
 
 			{checkoutFor && (
 				<CheckoutModal

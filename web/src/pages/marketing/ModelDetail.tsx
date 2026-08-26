@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { SkeletonDetail } from '../../components/skeleton';
 
 interface ModelFull {
 	display_name: string;
@@ -31,7 +32,13 @@ export default function ModelDetail() {
 		})();
 	}, [slug]);
 
-	if (loading) return <main className="grid min-h-dvh place-items-center text-sm text-[var(--nx-muted)]">Loading…</main>;
+	if (loading) {
+		return (
+			<main className="mx-auto max-w-3xl px-6 py-12">
+				<SkeletonDetail />
+			</main>
+		);
+	}
 	if (!model) {
 		return (
 			<main className="mx-auto max-w-3xl px-6 py-24 text-center">

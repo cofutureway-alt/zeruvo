@@ -1,53 +1,40 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { supabase, isAdmin } from '../lib/supabase';
-
-type SessionState = 'loading' | 'authed' | 'anon';
-
-const SessionCtx = createContext<SessionState>('loading');
-export const useSessionState = () => useContext(SessionCtx);
+import { useSession, useIsAdmin } from '../hooks/useSession';
 
 /**
  * Route guards — the SPA replacement for the old Next.js proxy.ts.
- * Session is validated with getUser() (server-side JWT check), never getSession().
+ * Session state comes from the live useSession() hook (restored session
+ * + onAuthStateChange), so a signed-in user never sees auth pages again.
  */
+
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-	const [state, setState] = useState<SessionState>('loading');
+	const { user, loading } = useSession();
 	const location = useLocation();
 
-	useEffect(() => {
-		void supabase.auth.getUser().then(({ data: { user } }) => {
-			setState(user ? 'authed' : 'anon');
-		});
-	}, []);
-
-	if (state === 'loading') return <FullscreenSpinner />;
-	if (state === 'anon') {
-		return <Navigate to="/login" replace state={{ next: location.pathname }} />;
-	}
-	return <SessionCtx.Provider value={state}>{children}</SessionCtx.Provider>;
+	if (loading) return <FullscreenSpinner />;
+	if (!user) return <Navigate to="/login" replace state={{ next: location.pathname }} />;
+	return children;
 }
 
 export function AdminRoute({ children }: { children: ReactNode }) {
-	const [state, setState] = useState<'loading' | 'ok' | 'user' | 'anon'>('loading');
+	const { user, loading } = useSession();
+	const admin = useIsAdmin();
+	const location = useLocation();
 
-	useEffect(() => {
-		void (async () => {
-			const {
-				data: { user },
-			} = await supabase.auth.getUser();
-			if (!user) {
-				setState('anon');
-				return;
-			}
-			setState((await isAdmin()) ? 'ok' : 'user');
-		})();
-	}, []);
+	if (loading || (user && admin === null)) return <FullscreenSpinner />;
+	if (!user) return <Navigate to="/login" replace state={{ next: location.pathname }} />;
+	// signed in but not an admin -> bounce to their dashboard
+	if (admin === false) return <Navigate to="/dashboard" replace />;
+	return children;
+}
 
-	if (state === 'loading') return <FullscreenSpinner />;
-	if (state === 'anon') return <Navigate to="/login" replace />;
-	if (state === 'user') return <Navigate to="/dashboard" replace />;
+/** Reverse guard: keep authenticated users off login/signup. */
+export function GuestRoute({ children }: { children: ReactNode }) {
+	const { user, loading } = useSession();
+
+	if (loading) return <FullscreenSpinner />;
+	if (user) return <Navigate to="/dashboard" replace />;
 	return children;
 }
 

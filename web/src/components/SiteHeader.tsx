@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { LayoutDashboard } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useSession, useIsAdmin } from '../hooks/useSession';
 
 export function SiteHeader() {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const { user, loading } = useSession();
+	const isAdmin = useIsAdmin();
 	const [open, setOpen] = useState(false);
 
 	const links = [
@@ -11,6 +17,11 @@ export function SiteHeader() {
 		{ to: '/pricing', label: t('nav.pricing') },
 		{ to: '/docs', label: t('nav.docs') },
 	];
+
+	async function logout() {
+		await supabase.auth.signOut();
+		navigate('/', { replace: true });
+	}
 
 	return (
 		<header className="sticky top-0 z-40 border-b border-[var(--nx-border)] bg-[var(--nx-bg)]/85 backdrop-blur">
@@ -30,16 +41,44 @@ export function SiteHeader() {
 					))}
 				</nav>
 
+				{/* auth-aware actions */}
 				<div className="hidden items-center gap-3 md:flex">
-					<Link to="/login" className="rounded-lg px-4 py-2 text-sm text-[var(--nx-muted)] transition hover:text-zinc-100">
-						{t('nav.login')}
-					</Link>
-					<Link
-						to="/signup"
-						className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-					>
-						{t('nav.signup')}
-					</Link>
+					{loading ? (
+						<div className="flex items-center gap-2" aria-busy="true">
+							<div className="nx-skeleton h-8 w-20 rounded-lg" />
+							<div className="nx-skeleton h-8 w-24 rounded-lg" />
+						</div>
+					) : user ? (
+						<>
+							{isAdmin && (
+								<Link to="/admin" className="rounded-lg px-3 py-2 text-sm text-[var(--nx-accent-strong)] transition hover:text-white">
+									{t('admin.title')}
+								</Link>
+							)}
+							<Link
+								to="/dashboard"
+								className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+							>
+								<LayoutDashboard size={15} />
+								{t('nav.dashboard')}
+							</Link>
+							<button onClick={logout} className="rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] transition hover:text-zinc-100">
+								{t('common.logout')}
+							</button>
+						</>
+					) : (
+						<>
+							<Link to="/login" className="rounded-lg px-4 py-2 text-sm text-[var(--nx-muted)] transition hover:text-zinc-100">
+								{t('nav.login')}
+							</Link>
+							<Link
+								to="/signup"
+								className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+							>
+								{t('nav.signup')}
+							</Link>
+						</>
+					)}
 				</div>
 
 				<button onClick={() => setOpen((o) => !o)} className="grid size-9 place-items-center md:hidden" aria-label="Menu">
@@ -50,6 +89,7 @@ export function SiteHeader() {
 					</span>
 				</button>
 			</div>
+
 			{open && (
 				<nav className="border-t border-[var(--nx-border)] px-6 py-3 md:hidden">
 					{links.map((l) => (
@@ -57,14 +97,25 @@ export function SiteHeader() {
 							{l.label}
 						</Link>
 					))}
-					<div className="mt-2 flex gap-2">
-						<Link to="/login" className="flex-1 rounded-lg border border-[var(--nx-border)] py-2 text-center text-sm">
-							{t('nav.login')}
-						</Link>
-						<Link to="/signup" className="flex-1 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">
-							{t('nav.signup')}
-						</Link>
-					</div>
+					{user ? (
+						<div className="mt-2 space-y-2">
+							<Link to="/dashboard" onClick={() => setOpen(false)} className="block rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">
+								{t('nav.dashboard')}
+							</Link>
+							<button onClick={() => { setOpen(false); void logout(); }} className="w-full rounded-lg border border-[var(--nx-border)] py-2 text-sm text-[var(--nx-muted)]">
+								{t('common.logout')}
+							</button>
+						</div>
+					) : (
+						<div className="mt-2 flex gap-2">
+							<Link to="/login" className="flex-1 rounded-lg border border-[var(--nx-border)] py-2 text-center text-sm">
+								{t('nav.login')}
+							</Link>
+							<Link to="/signup" className="flex-1 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">
+								{t('nav.signup')}
+							</Link>
+						</div>
+					)}
 				</nav>
 			)}
 		</header>

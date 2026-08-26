@@ -150,6 +150,33 @@ body {
 	50% { transform: translateY(-12px); }
 }
 
+/* ---------- Skeleton shimmer ---------- */
+.nx-skeleton {
+	position: relative;
+	overflow: hidden;
+	border-radius: 6px;
+	background: rgba(139, 124, 255, 0.06);
+}
+.nx-skeleton::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	transform: translateX(-100%);
+	background: linear-gradient(
+		90deg,
+		transparent,
+		rgba(139, 124, 255, 0.09),
+		transparent
+	);
+	animation: nx-shimmer 1.6s infinite;
+}
+@keyframes nx-shimmer {
+	to { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.nx-skeleton::after { animation: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.split-word, .shiny-text, .signal-dot::after, .reveal { animation: none !important; transition: none !important; }
 	.split-word, .reveal { opacity: 1 !important; transform: none !important; }

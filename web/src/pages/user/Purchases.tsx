@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ReceiptText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
+import { SkeletonTable } from '../../components/skeleton';
 
 interface PurchaseRow {
 	id: string;
@@ -16,6 +17,7 @@ interface PurchaseRow {
 export default function Purchases() {
 	const [email, setEmail] = useState('');
 	const [rows, setRows] = useState<PurchaseRow[]>([]);
+	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
 		void (async () => {
@@ -27,6 +29,7 @@ export default function Purchases() {
 				.select('id,invoice_no,amount_egp,amount_usd_display,method,status,created_at')
 				.order('created_at', { ascending: false });
 			setRows((data ?? []) as PurchaseRow[]);
+			setLoading(false);
 		})();
 	}, []);
 
@@ -38,6 +41,7 @@ export default function Purchases() {
 					<p className="mt-0.5 text-sm text-[var(--nx-muted)]">All payment history and invoices.</p>
 				</header>
 
+				{loading ? <SkeletonTable rows={6} cols={6} /> : (
 				<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
 					<table className="w-full text-sm">
 						<thead className="bg-zinc-900/60 text-xs uppercase tracking-wide text-[var(--nx-muted)]">
@@ -75,7 +79,8 @@ export default function Purchases() {
 							)}
 						</tbody>
 					</table>
-				</div>
+					</div>
+				)}
 			</div>
 		</DashboardShell>
 	);
