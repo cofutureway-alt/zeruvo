@@ -106,5 +106,5 @@ if (req.method === 'OPTIONS') {
 	return Response.json({
 		checkout_url: `https://payments.kashier.io/?${q.toString()}`,
 		order_id: orderId,
-	});
+	}, { headers: CORS_HEADERS });
 });

@@ -171,5 +171,5 @@ if (req.method === 'OPTIONS') {
 		updated_meta: updatedMeta,
 		rich_metadata: isRich,
 		keys_probed: keyResults,
-	});
+	}, { headers: CORS_HEADERS });
 });
