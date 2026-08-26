@@ -25,3 +25,17 @@ as $$
 $$;
 
 revoke all on function public.resolve_model(text) from public, anon, authenticated;
+
+-- revive_provider_key: clears a stale dead-until marker (self-healing path)
+create or replace function public.revive_provider_key(p_key_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.provider_keys
+  set dead_until = null, last_error_code = null
+  where id = p_key_id;
+$$;
+
+revoke all on function public.revive_provider_key(uuid) from public, anon, authenticated;

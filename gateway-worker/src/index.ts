@@ -9,9 +9,11 @@
  */
 import { setEnv } from './db';
 import { authenticate } from './auth';
-import { estimateTokens, reserve, settle } from './quota';
+import { estimateTokens, reserve, settle, takeReservation, clearReservation } from './quota';
 import {
 	fromOpenAI,
+	fromAnthropic,
+	fromGemini,
 	toOpenAI,
 	toAnthropic,
 	toGemini,
@@ -79,7 +81,10 @@ export default {
 			}
 			const geminiMatch = url.pathname.match(/^\/v1beta\/models\/([^:]+):(generateContent|streamGenerateContent)$/);
 			if (geminiMatch && request.method === 'POST') {
-				return await handleChat(request, 'gemini', decodeURIComponent(geminiMatch[1]));
+				const wantsStream =
+					geminiMatch[2] === 'streamGenerateContent' ||
+					url.searchParams.get('alt') === 'sse';
+				return await handleChat(request, 'gemini', decodeURIComponent(geminiMatch[1]), wantsStream);
 			}
 			if (url.pathname === '/v1/models' && request.method === 'GET') {
 				return await listModels();
@@ -88,6 +93,14 @@ export default {
 			return json({ error: { type: 'not_found', message: `No route for ${url.pathname}` } }, 404);
 		} catch (err) {
 			console.error('gateway error', err);
+			// release any quota reservation stranded by this failure
+			const pending = takeReservation();
+			if (pending) {
+				await settleAfter({ ok: true as const, reservation: pending }, 0, {
+					error_code: 'internal_error',
+					status: 500,
+				}).catch((e) => console.error('release failed', e));
+			}
 			return json(
 				{ error: { type: 'gateway_error', message: 'Internal gateway error' } },
 				500,
@@ -99,14 +112,25 @@ export default {
 void postgrestRpc;
 
 // ---------- chat pipeline ----------
-async function handleChat(request: Request, clientWire: Wire, geminiModel?: string): Promise<Response> {
+async function handleChat(request: Request, clientWire: Wire, geminiModel?: string, geminiWantsStream?: boolean): Promise<Response> {
 	const auth = await authenticate(request);
 	if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
 
 	const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
 
-	const neutral = fromOpenAI(rawBody);
+	// parse the body with the adapter matching the CLIENT's wire format —
+	// Anthropic/Gemini natives carry system prompts and tool schemas in
+	// their own shapes that the OpenAI parser would silently drop
+	const neutral =
+		clientWire === 'anthropic'
+			? fromAnthropic(rawBody)
+			: clientWire === 'gemini'
+				? fromGemini(rawBody, geminiModel)
+				: fromOpenAI(rawBody);
+	// Gemini streaming comes from the URL verb (?alt=sse / :streamGenerateContent),
+	// never from a JSON field — honor it explicitly
+	if (clientWire === 'gemini' && geminiWantsStream) neutral.stream = true;
 	const upstreamModel = clientWire === 'gemini' ? (geminiModel ?? neutral.model) : neutral.model;
 
 	// resolve model → provider + multiplier
@@ -161,6 +185,11 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 		const chosen = pickWeighted(keys);
 		if (!chosen) {
 			noKeysHit = true;
+			console.error('NO LIVE KEYS:', JSON.stringify({
+				provider_id: resolved.provider_id,
+				keys_seen: keys.map((k) => ({ id: k.id.slice(0, 8), dead_until: k.dead_until, now_ms: Date.now() })),
+				attempt,
+			}));
 			return json({ error: { type: 'no_provider_keys', message: 'Provider has no live keys' } }, 503);
 		}
 		const apiKey = await decryptProviderKey(dek, chosen.encrypted_key);
@@ -221,11 +250,22 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 
 		lastError = upstreamRes.res;
 		if ([401, 402, 403].includes(upstreamRes.res.status)) {
-			await markDead(chosen.id, 30); // dead 30 min
+			await markDead(chosen.id, 5); // dead 5 min (was 30 — too punishing)
 			continue; // retry with another key (same reservation still held)
 		}
 		if (upstreamRes.res.status === 429) {
-			continue; // rotate to another key once
+			// provider-side rate limit (e.g. free model saturated) — do NOT
+			// kill the key; rotate once and if that fails surface a clean 429
+			if (attempt === 0) continue;
+			return json(
+				{
+					error: {
+						type: 'provider_rate_limited',
+						message: 'Upstream provider is rate-limited for this model. Retry shortly.',
+					},
+				},
+				429,
+			);
 		}
 		break; // other errors: surface to client
 	}
@@ -233,14 +273,31 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 	// All attempts failed: nothing was streamed, so release the ENTIRE
 	// reservation and bill nothing. Previously this path stranded the
 	// reserved amount against the user's quota for the rest of the day.
+	const allKeysDead = !noKeysHit && lastError && [401, 402, 403].includes(lastError.status);
 	await settleAfter(reservation, 0, {
 		api_key_id: auth.ctx.api_key_id,
 		model_id: resolved.model_id,
 		upstream_model: upstreamModel,
 		status: noKeysHit ? 503 : lastError!.status,
-		error_code: noKeysHit ? 'no_provider_keys' : 'upstream_failed',
+		error_code: noKeysHit
+			? 'no_provider_keys'
+			: allKeysDead
+				? 'provider_keys_rejected'
+				: 'upstream_failed',
 		latency_ms: Date.now() - startedAt,
 	});
+	if (allKeysDead) {
+		return json(
+			{
+				error: {
+					type: 'provider_keys_rejected',
+					message:
+						'The upstream provider rejected our credentials from this deployment. This is transient infrastructure — the admin has been notified via key health metrics.',
+				},
+			},
+			502,
+		);
+	}
 	return applyUpstreamHeaders(lastError!, await lastError!.text(), true);
 }
 
@@ -381,8 +438,11 @@ async function settleAfter(
 	logExtra: Record<string, unknown>,
 ): Promise<void> {
 	try {
-		const raw = typeof usage === 'number' ? usage : usage.input + usage.output - (usage.cacheRead ?? 0);
-		await settle(reservation.reservation, Math.max(raw, 1), {
+		const raw = typeof usage === 'number'
+			? usage
+			: Math.max(usage.input + usage.output - (usage.cacheRead ?? 0), 1);
+		clearReservation(); // reservation no longer in flight
+		await settle(reservation.reservation, raw, {
 			...logExtra,
 			tokens_in: typeof usage === 'object' ? usage.input : 0,
 			tokens_out: typeof usage === 'object' ? usage.output : 0,

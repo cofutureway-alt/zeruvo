@@ -49,9 +49,25 @@ export function pickWeighted(keys: ProviderKeyRow[]): ProviderKeyRow | null {
 }
 
 export async function loadProviderKeys(providerId: string): Promise<ProviderKeyRow[]> {
-	return (
-		(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId })) ?? []
-	);
+	const keys =
+		(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId })) ?? [];
+
+	// self-healing: if every key is marked dead but its window already
+	// expired, clear the stale markers and retry once — otherwise a single
+	// transient outage permanently locks the provider until manual cleanup
+	if (keys.length > 0 && !pickWeighted(keys)) {
+		const now = Date.now();
+		const stale = keys.filter(
+			(k) => k.dead_until && new Date(k.dead_until).getTime() <= now,
+		);
+		if (stale.length) {
+			await Promise.all(stale.map((k) => postgrestRpc('revive_provider_key', { p_key_id: k.id })));
+			return (
+				(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId })) ?? []
+			);
+		}
+	}
+	return keys;
 }
 
 /** Mark a key dead after auth/billing errors (401/402/403). */

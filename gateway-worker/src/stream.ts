@@ -42,6 +42,13 @@ export function pipeProviderStream(
 	const outcome: StreamOutcome = { usage: null, streamedBytes: 0 };
 	let resolveOutcome!: (o: StreamOutcome) => void;
 	const outcomePromise = new Promise<StreamOutcome>((r) => (resolveOutcome = r));
+	let outcomeSettled = false;
+	/** idempotent resolution — client cancels/timeout/error can all race here */
+	function finish() {
+		if (outcomeSettled) return;
+		outcomeSettled = true;
+		resolveOutcome(outcome);
+	}
 
 	const reader = providerRes.body!.getReader();
 
@@ -50,25 +57,29 @@ export function pipeProviderStream(
 			let buffer = '';
 			let firstDataSeen = false;
 
-			heartbeatInterval = setInterval(() => {
+			/** enqueue that never throws on a dead client */
+			function safeEnqueue(chunk: Uint8Array): boolean {
 				try {
-					controller.enqueue(encoder.encode(': heartbeat\n\n'));
+					controller.enqueue(chunk);
+					return true;
 				} catch {
-					/* client gone */
+					return false; // client gone
 				}
+			}
+
+			heartbeatInterval = setInterval(() => {
+				safeEnqueue(encoder.encode(': heartbeat\n\n'));
 			}, HEARTBEAT_MS);
 
 			timeoutHandle = setTimeout(() => {
 				outcome.timedOut = true;
-				controller.enqueue(
+				safeEnqueue(
 					encoder.encode(errorFrame(clientWire, 'gateway_timeout', 'Upstream exceeded time limit')),
 				);
-				try {
-					reader.cancel();
-				} catch {}
+				try { reader.cancel(); } catch {}
 				cleanup();
-				controller.close();
-				resolveOutcome(outcome);
+				try { controller.close(); } catch {}
+				finish();
 			}, timeoutMs);
 
 			try {
@@ -90,16 +101,24 @@ export function pipeProviderStream(
 							const err = sniffError(payload, providerRes.status);
 							if (err) {
 								outcome.sniffedError = err;
-								controller.enqueue(encoder.encode(errorFrame(clientWire, 'upstream_error', err.message)));
+								safeEnqueue(encoder.encode(errorFrame(clientWire, 'upstream_error', err.message)));
 								cleanup();
-								controller.close();
-								resolveOutcome(outcome);
+								try { controller.close(); } catch {}
+								finish();
 								return;
 							}
 						}
 						extractUsage(payload, clientWire, outcome);
 						outcome.streamedBytes += payload.length;
-						controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+						// stop piping if the client walked away — but the outcome
+						// still resolves so quota settles for what was streamed
+						if (!safeEnqueue(encoder.encode(`data: ${payload}\n\n`))) {
+							cleanup();
+							try { reader.cancel(); } catch {}
+							try { controller.close(); } catch {}
+							finish();
+							return;
+						}
 					}
 				}
 			} catch {
@@ -107,16 +126,19 @@ export function pipeProviderStream(
 			}
 
 			// terminal frame per wire
-			if (clientWire === 'openai') controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+			if (clientWire === 'openai') safeEnqueue(encoder.encode('data: [DONE]\n\n'));
 			cleanup();
-			controller.close();
-			resolveOutcome(outcome);
+			try { controller.close(); } catch {}
+			finish();
 		},
 		cancel() {
 			cleanup();
 			try {
 				reader.cancel();
 			} catch {}
+			// client walked away mid-stream — still settle quota for the
+			// provable volume streamed so far (was: reservation stranded)
+			finish();
 		},
 	});
 

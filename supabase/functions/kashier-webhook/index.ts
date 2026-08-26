@@ -21,6 +21,14 @@ async function hmacHex(key: string, payload: string): Promise<string> {
 	return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Constant-time hex string comparison. */
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	return diff === 0;
+}
+
 function b64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
 	const bytes = new Uint8Array(bin.length);
@@ -76,22 +84,38 @@ if (req.method === 'OPTIONS') {
 		return `${key}=${rfc3986(v == null ? '' : String(v))}`;
 	});
 	const expected = await hmacHex(apiKey, pairs.join('&'));
-	if (expected !== signature.toLowerCase()) {
+	if (!timingSafeEqual(expected, signature.toLowerCase())) {
 		console.warn('kashier webhook: bad signature');
 		return Response.json({ error: 'invalid signature' }, { status: 401, headers: CORS_HEADERS })
 	}
 
 	const orderId: string = body.data.merchantOrderId;
 	const { data: payment } = await admin.from('payments')
-		.select('id,user_id,status,meta').eq('gateway_ref', orderId).single();
+		.select('id,user_id,status,amount_egp,meta').eq('gateway_ref', orderId).single();
 	if (!payment) return Response.json({ error: 'unknown order' }, { status: 404, headers: CORS_HEADERS })
 
 	const success = body.event === 'pay' && String(body.data.status).toUpperCase() === 'SUCCESS';
 	if (!success) {
-		await admin.from('payments').update({ status: 'failed' }).eq('id', payment.id);
-		return Response.json({ ok: true, handled: 'failed' }, { headers: CORS_HEADERS })
+		// only downgrade PENDING orders — never overwrite a PAID one
+		// (a forged/late failure event must not un-grant a real payment)
+		if (payment.status === 'pending') {
+			await admin.from('payments').update({ status: 'failed' }).eq('id', payment.id);
+		}
+		return Response.json({ ok: true, handled: 'failed-ignored' }, { headers: CORS_HEADERS })
 	}
 	if (payment.status === 'paid') return Response.json({ ok: true, handled: 'already-paid' }, { headers: CORS_HEADERS })
+
+	// amount validation: Kashier sends piasters; compare against stored EGP amount
+	const paidAmount = Number(body.data.amount ?? 0) / 100;
+	const expectedAmount = Number(payment.amount_egp);
+	if (!(Math.abs(paidAmount - expectedAmount) < 0.01)) {
+		console.warn(`kashier webhook: amount mismatch paid=${paidAmount} expected=${expectedAmount}`);
+		await admin.from('payments').update({
+			status: 'failed',
+			meta: { ...(payment.meta as object), fraud_flag: 'amount_mismatch', paid_amount: paidAmount },
+		}).eq('id', payment.id);
+		return Response.json({ error: 'amount mismatch' }, { status: 400, headers: CORS_HEADERS })
+	}
 
 	const planId = (payment.meta as any)?.plan_id;
 	if (!planId) return Response.json({ error: 'payment missing plan meta' }, { status: 500, headers: CORS_HEADERS })

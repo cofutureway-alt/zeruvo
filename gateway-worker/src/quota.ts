@@ -32,6 +32,20 @@ export type ReserveResult =
 	| { ok: true; reservation: Reservation }
 	| { ok: false; status: number; code: string; message: string };
 
+/**
+ * Tracks the currently in-flight reservation per isolate so the outer
+ * error handler can release it if an unexpected exception fires after
+ * reserve() but before settle().
+ */
+let activeReservation: Reservation | null = null;
+export function trackReservation(r: Reservation) { activeReservation = r; }
+export function clearReservation() { activeReservation = null; }
+export function takeReservation(): Reservation | null {
+	const r = activeReservation;
+	activeReservation = null;
+	return r;
+}
+
 export async function reserve(
 	userId: string,
 	multiplier: number,
@@ -54,7 +68,9 @@ export async function reserve(
 			p_user_id: userId,
 			p_estimate_weighted: estimate,
 		});
-		return { ok: true, reservation: { user_id: userId, reserved_amount: estimate, multiplier } };
+		const reservation = { user_id: userId, reserved_amount: estimate, multiplier };
+		trackReservation(reservation);
+		return { ok: true, reservation };
 	} catch (err) {
 		if (err instanceof RpcError && err.body.includes('QUOTA_EXCEEDED')) {
 			return {

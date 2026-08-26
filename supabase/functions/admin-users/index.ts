@@ -15,6 +15,14 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+/** Strip secrets from the body before writing to audit_logs. */
+function sanitizeForAudit(action: string, body: Record<string, any>): Record<string, any> {
+	const clone = { ...body };
+	delete clone.new_password;
+	if (action === 'change_email') clone.old_email_redacted = true;
+	return clone;
+}
+
 Deno.serve(async (req) => {
 // CORS: the SPA calls these functions directly from the browser
 const CORS_HEADERS = {
@@ -52,14 +60,42 @@ if (req.method === 'OPTIONS') {
 	let result: any = null;
 	let error: string | null = null;
 
+	// Guard: admins cannot ban/delete/demote THEMSELVES, and the system
+	// can never end up with zero admins (DB triggers also enforce this).
+	const selfTargeting = targetId === user.id;
+	if (selfTargeting && ['ban', 'delete'].includes(action)) {
+		return Response.json({ error: 'you cannot ban or delete your own account' }, { status: 400, headers: CORS_HEADERS })
+	}
+
+	async function demoteLastAdminGuard(targetProfileId: string): Promise<string | null> {
+		const { data: target } = await admin.from('profiles').select('role').eq('id', targetProfileId).single();
+		if (target?.role !== 'admin') return null;
+		const { count } = await admin
+			.from('profiles').select('id', { count: 'exact', head: true })
+			.eq('role', 'admin').neq('id', targetProfileId);
+		if ((count ?? 0) === 0) return 'cannot remove the last admin';
+		return null;
+	}
+
 	switch (action) {
 		case 'set_role': {
 			const role = body.role === 'admin' ? 'admin' : 'user';
+			if (selfTargeting && role === 'user') {
+				error = await demoteLastAdminGuard(targetId)
+					?? 'you cannot demote your own admin account';
+				if (error) break;
+			}
+			if (role === 'user') {
+				error = await demoteLastAdminGuard(targetId);
+				if (error) break;
+			}
 			({ error } = await admin.from('profiles').update({ role }).eq('id', targetId));
 			result = { role };
 			break;
 		}
 		case 'ban': {
+			error = await demoteLastAdminGuard(targetId);
+			if (error) break;
 			({ error } = await admin.auth.admin.updateUserById(targetId, { ban_duration: '876000h' }));
 			result = { banned: true };
 			break;
@@ -70,6 +106,8 @@ if (req.method === 'OPTIONS') {
 			break;
 		}
 		case 'delete': {
+			error = await demoteLastAdminGuard(targetId);
+			if (error) break;
 			({ error } = await admin.auth.admin.deleteUser(targetId));
 			result = { deleted: true };
 			break;
@@ -131,7 +169,7 @@ if (req.method === 'OPTIONS') {
 		action: `admin_users.${action}`,
 		target_table: 'auth.users',
 		target_id: targetId,
-		diff: body,
+		diff: sanitizeForAudit(action, body),
 	});
 
 	return Response.json({ ok: true, result }, { headers: CORS_HEADERS })
