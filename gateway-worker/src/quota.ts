@@ -37,8 +37,18 @@ export async function reserve(
 	multiplier: number,
 	inputEstimate: number,
 	outputEstimate: number,
+	dailyAllowance?: number | null,
 ): Promise<ReserveResult> {
-	const estimate = Math.ceil((inputEstimate + outputEstimate) * multiplier);
+	let estimate = Math.ceil((inputEstimate + outputEstimate) * multiplier);
+
+	// Cap the reservation at a fraction of the daily allowance so a huge
+	// prompt on a high-multiplier model can't eat most of the day's quota
+	// in one speculative estimate (settlement bills actual usage anyway).
+	const CAP_FRACTION = 0.2;
+	if (dailyAllowance && dailyAllowance > 0) {
+		estimate = Math.min(estimate, Math.ceil(dailyAllowance * CAP_FRACTION));
+	}
+
 	try {
 		await postgrestRpc('reserve_quota', {
 			p_user_id: userId,

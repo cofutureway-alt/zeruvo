@@ -20,6 +20,8 @@ export interface StreamOutcome {
 	usage: Usage | null;
 	sniffedError?: { status: number; message: string };
 	timedOut?: boolean;
+	/** bytes actually streamed to the client — provable output volume */
+	streamedBytes: number;
 }
 
 /**
@@ -37,7 +39,7 @@ export function pipeProviderStream(
 	let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 	let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-	const outcome: StreamOutcome = { usage: null };
+	const outcome: StreamOutcome = { usage: null, streamedBytes: 0 };
 	let resolveOutcome!: (o: StreamOutcome) => void;
 	const outcomePromise = new Promise<StreamOutcome>((r) => (resolveOutcome = r));
 
@@ -96,6 +98,7 @@ export function pipeProviderStream(
 							}
 						}
 						extractUsage(payload, clientWire, outcome);
+						outcome.streamedBytes += payload.length;
 						controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
 					}
 				}

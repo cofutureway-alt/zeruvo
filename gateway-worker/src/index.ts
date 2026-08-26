@@ -139,7 +139,13 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 				? rawBody.max_tokens
 				: undefined;
 	const est = estimateTokens(neutral.messages, maxTok);
-	const reservation = await reserve(auth.ctx.user_id, multiplier, est.inputEstimate, est.outputEstimate);
+	const reservation = await reserve(
+		auth.ctx.user_id,
+		multiplier,
+		est.inputEstimate,
+		est.outputEstimate,
+		auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
+	);
 	if (!reservation.ok) {
 		return json({ error: { type: reservation.code, message: reservation.message } }, reservation.status);
 	}
@@ -147,11 +153,14 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 	// provider keys + weighted selection with one retry on dead/rotatable errors
 	const dek = await importDek(envNow().NEXOR_ENCRYPTION_KEY);
 	let lastError: Response | null = null;
+	let noKeysHit = false;
+	const startedAt = Date.now();
 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const keys = await loadProviderKeys(resolved.provider_id);
 		const chosen = pickWeighted(keys);
 		if (!chosen) {
+			noKeysHit = true;
 			return json({ error: { type: 'no_provider_keys', message: 'Provider has no live keys' } }, 503);
 		}
 		const apiKey = await decryptProviderKey(dek, chosen.encrypted_key);
@@ -177,13 +186,29 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 			const { body, outcome } = pipeProviderStream(upstreamRes.res, clientWire);
 			keepAlive(
 				outcome.then((o) => {
-					const usage = o.usage ?? { input: est.inputEstimate, output: est.outputEstimate };
-					return settleAfter(reservation, usage.input + usage.output, {
+					// Settlement policy (anti-quota-burn):
+					//  1. provider reported usage -> bill actual tokens
+					//  2. otherwise -> bill provable volume only:
+					//     measured streamed bytes / 4 as output tokens,
+					//     plus the input estimate. The speculative output
+					//     estimate is NEVER billed.
+					const usage = o.usage;
+					const rawBill = usage
+						? usage.input + usage.output
+						: est.inputEstimate + Math.ceil(o.streamedBytes / 4);
+					return settleAfter(reservation, rawBill, {
 						api_key_id: auth.ctx.api_key_id,
 						model_id: resolved.model_id,
 						upstream_model: upstreamModel,
 						status: o.sniffedError?.status ?? 200,
-						error_code: o.sniffedError ? 'upstream_stream_error' : o.timedOut ? 'gateway_timeout' : null,
+						error_code: o.sniffedError
+							? 'upstream_stream_error'
+							: o.timedOut
+								? 'gateway_timeout'
+								: !usage && neutral.stream
+									? 'usage_unreported'
+									: null,
+						tokens_out_measured: usage ? undefined : Math.ceil(o.streamedBytes / 4),
 						latency_ms: Date.now() - started,
 					});
 				}),
@@ -197,7 +222,7 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 		lastError = upstreamRes.res;
 		if ([401, 402, 403].includes(upstreamRes.res.status)) {
 			await markDead(chosen.id, 30); // dead 30 min
-			continue; // retry with another key
+			continue; // retry with another key (same reservation still held)
 		}
 		if (upstreamRes.res.status === 429) {
 			continue; // rotate to another key once
@@ -205,6 +230,17 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 		break; // other errors: surface to client
 	}
 
+	// All attempts failed: nothing was streamed, so release the ENTIRE
+	// reservation and bill nothing. Previously this path stranded the
+	// reserved amount against the user's quota for the rest of the day.
+	await settleAfter(reservation, 0, {
+		api_key_id: auth.ctx.api_key_id,
+		model_id: resolved.model_id,
+		upstream_model: upstreamModel,
+		status: noKeysHit ? 503 : lastError!.status,
+		error_code: noKeysHit ? 'no_provider_keys' : 'upstream_failed',
+		latency_ms: Date.now() - startedAt,
+	});
 	return applyUpstreamHeaders(lastError!, await lastError!.text(), true);
 }
 
@@ -243,6 +279,11 @@ async function forwardToProvider(
 			headers['X-Title'] = 'Nexor AI';
 		}
 		payload = toOpenAI(neutral);
+		// ask the provider to include usage in the final stream chunk,
+		// otherwise streaming settlement would fall back to estimates
+		if ((payload as { stream?: boolean }).stream) {
+			(payload as Record<string, unknown>).stream_options = { include_usage: true };
+		}
 		endpoint = `${base}/chat/completions`;
 
 		// worker-to-worker on the same account hits Cloudflare loop protection
