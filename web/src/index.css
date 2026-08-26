@@ -1,40 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+/* ============================================================
+   Nexor AI — "Routing Room" design tokens
+   Deep space violet ground, electric-violet signal, mint data.
+   ============================================================ */
 :root {
 	color-scheme: dark;
-	--nx-bg: #09090b;
-	--nx-surface: #111113;
-	--nx-border: #27272a;
-	--nx-text: #f4f4f5;
-	--nx-muted: #a1a1aa;
-	--nx-accent: #6366f1;
-	--nx-accent-strong: #818cf8;
+	--nx-bg: #08080f;
+	--nx-bg-raised: #0d0d18;
+	--nx-surface: #101019;
+	--nx-surface-2: #161624;
+	--nx-border: #23233a;
+	--nx-border-bright: #34345a;
+	--nx-text: #eceaf7;
+	--nx-muted: #8e8ca8;
+	--nx-accent: #8b7cff;
+	--nx-accent-strong: #a99cff;
+	--nx-mint: #4ae3b5;
+	--nx-danger: #ff6473;
+	--nx-amber: #ffc46b;
+
+	--font-display: 'Space Grotesk', 'IBM Plex Sans Arabic', sans-serif;
+	--font-body: 'Inter', 'IBM Plex Sans Arabic', sans-serif;
+	--font-data: 'JetBrains Mono', monospace;
+}
+
+[dir='rtl'] {
+	--font-display: 'IBM Plex Sans Arabic', sans-serif;
+	--font-body: 'IBM Plex Sans Arabic', sans-serif;
 }
 
 body {
 	background: var(--nx-bg);
 	color: var(--nx-text);
-	font-family: var(--font-locale), system-ui, sans-serif;
+	font-family: var(--font-body);
+	font-feature-settings: 'ss01' on;
 }
+
+.font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+.font-data { font-family: var(--font-data); }
 
 ::selection {
 	background: var(--nx-accent);
-	color: white;
+	color: #08080f;
 }
 
-@keyframes nx-marquee {
-	from { transform: translateX(0); }
-	to { transform: translateX(-50%); }
+/* ---------- ambient background: routing grid ---------- */
+.nx-grid-bg {
+	background-image:
+		radial-gradient(ellipse 60% 50% at 50% -10%, rgba(139, 124, 255, 0.13), transparent),
+		linear-gradient(rgba(139, 124, 255, 0.035) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(139, 124, 255, 0.035) 1px, transparent 1px);
+	background-size: 100% 100%, 56px 56px, 56px 56px;
+	mask-image: linear-gradient(to bottom, black 55%, transparent 95%);
 }
-[dir='rtl'] .marquee-track { animation-name: nx-marquee-rtl; }
-@keyframes nx-marquee-rtl {
-	from { transform: translateX(-50%); }
-	to { transform: translateX(0); }
+.nx-grid-bg-fixed {
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
 }
-.marquee-track {
-	animation: nx-marquee 30s linear infinite;
-	will-change: transform;
+
+/* ---------- React-Bits style effects ---------- */
+
+/* SplitText: word-by-word rise on load */
+.split-word {
+	display: inline-block;
+	opacity: 0;
+	transform: translateY(0.7em) rotate(2deg);
+	animation: split-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+@keyframes split-rise {
+	to { opacity: 1; transform: translateY(0) rotate(0); }
+}
+
+/* ShinyText: traveling sheen for gradient headlines */
+.shiny-text {
+	background: linear-gradient(
+		110deg,
+		var(--nx-accent) 25%,
+		#d4ccff 45%,
+		var(--nx-mint) 50%,
+		#d4ccff 55%,
+		var(--nx-accent) 75%
+	);
+	background-size: 250% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: shiny-sweep 5s linear infinite;
+}
+@keyframes shiny-sweep {
+	from { background-position: 200% center; }
+	to { background-position: -50% center; }
+}
+
+/* SpotlightCard: pointer-following glow */
+.spotlight-card {
+	position: relative;
+	overflow: hidden;
+	background: var(--nx-surface);
+	border: 1px solid var(--nx-border);
+	border-radius: 16px;
+	transition: border-color 0.3s ease, transform 0.3s ease;
+}
+.spotlight-card::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	opacity: 0;
+	transition: opacity 0.4s ease;
+	background: radial-gradient(
+		420px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+		rgba(139, 124, 255, 0.11),
+		transparent 65%
+	);
+	pointer-events: none;
+}
+.spotlight-card:hover { border-color: var(--nx-border-bright); transform: translateY(-2px); }
+.spotlight-card:hover::before { opacity: 1; }
+
+/* CountUp handled in JS; fade-slide-in utility */
+.reveal {
+	opacity: 0;
+	transform: translateY(16px);
+	transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.in-view { opacity: 1; transform: none; }
+
+/* Signal dot — live status pulse */
+.signal-dot { position: relative; display: inline-grid; place-items: center; }
+.signal-dot::after {
+	content: '';
+	width: 100%;
+	height: 100%;
+	border-radius: 9999px;
+	background: inherit;
+	position: absolute;
+	animation: signal-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes signal-ping {
+	0% { transform: scale(1); opacity: 0.6; }
+	80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+
+@keyframes badge-float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-12px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.marquee-track { animation: none; }
+	.split-word, .shiny-text, .signal-dot::after, .reveal { animation: none !important; transition: none !important; }
+	.split-word, .reveal { opacity: 1 !important; transform: none !important; }
 }

@@ -1,0 +1,60 @@
+{
+	"nav": {
+		"models": "الموديلات",
+		"pricing": "الأسعار",
+		"docs": "التوثيق",
+		"login": "تسجيل الدخول",
+		"signup": "إنشاء حساب",
+		"dashboard": "لوحة التحكم"
+	},
+	"auth": {
+		"loginTitle": "أهلاً بعودتك",
+		"loginSubtitle": "سجّل الدخول إلى حسابك في Nexor AI",
+		"signupTitle": "أنشئ حسابك",
+		"signupSubtitle": "ابدأ بالخطة المجانية في ثوانٍ",
+		"email": "البريد الإلكتروني",
+		"password": "كلمة المرور",
+		"confirmPassword": "تأكيد كلمة المرور",
+		"loginAction": "دخول",
+		"signupAction": "إنشاء الحساب",
+		"noAccount": "ليس لديك حساب؟",
+		"haveAccount": "لديك حساب بالفعل؟",
+		"passwordMismatch": "كلمتا المرور غير متطابقتين",
+		"invalidCredentials": "بريد إلكتروني أو كلمة مرور خاطئة",
+		"emailInUse": "يوجد حساب مسجل بهذا البريد بالفعل"
+	},
+	"dashboard": {
+		"title": "لوحة التحكم",
+		"overview": "نظرة عامة",
+		"apiKeys": "مفاتيح API",
+		"logs": "السجلات",
+		"plans": "الخطط",
+		"purchases": "المشتريات",
+		"endpoints": "نقاط الاتصال",
+		"docs": "التوثيق",
+		"settings": "الإعدادات",
+		"welcome": "مرحباً",
+		"logout": "تسجيل الخروج"
+	},
+	"admin": {
+		"title": "الإدارة",
+		"providers": "المزودون",
+		"models": "الموديلات والتصنيفات",
+		"plans": "الخطط",
+		"users": "المستخدمون",
+		"payments": "المدفوعات",
+		"coupons": "الكوبونات",
+		"announcements": "الإعلانات",
+		"gateways": "بوابات الدفع"
+	},
+	"common": {
+		"loading": "جارٍ التحميل…",
+		"save": "حفظ",
+		"cancel": "إلغاء",
+		"delete": "حذف",
+		"edit": "تعديل",
+		"create": "إنشاء",
+		"search": "بحث",
+		"logout": "تسجيل الخروج"
+	}
+}

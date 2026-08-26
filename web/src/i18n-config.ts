@@ -1,9 +1,9 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import en from '../../messages/en.json';
-import ar from '../../messages/ar.json';
-import fr from '../../messages/fr.json';
-import zh from '../../messages/zh.json';
+import en from './i18n/locales/en.json';
+import ar from './i18n/locales/ar.json';
+import fr from './i18n/locales/fr.json';
+import zh from './i18n/locales/zh.json';
 
 export const locales = ['en', 'ar', 'fr', 'zh'] as const;
 export type Locale = (typeof locales)[number];

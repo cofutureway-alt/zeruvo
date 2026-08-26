@@ -7,5 +7,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["scripts/**/*.mjs", "supabase/functions/**/*.ts"]
+  "include": ["scripts/**/*.mjs"],
+  "exclude": ["supabase/functions", "web", "gateway-worker"]
 }

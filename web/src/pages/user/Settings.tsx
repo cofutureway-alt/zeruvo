@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
-import { locales, setLocale, type Locale } from '../../i18n';
+import { locales, setLocale, type Locale } from '../../i18n-config';
 
 const labels: Record<Locale, string> = { en: 'English', ar: 'العربية', fr: 'Français', zh: '中文' };
 

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './index.css';
-import { i18next as i18n, rtlLocales, localeFonts } from './i18n';
+import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
 import { ProtectedRoute, AdminRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
 import Home from './pages/marketing/Home';
