@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import { Link } from '@/i18n/navigation';
 import { usePathname } from 'next/navigation';
 import {
 	Boxes,
@@ -55,7 +55,13 @@ export function AdminSidebar({ email, onLogout }: { email: string; onLogout: () 
 			{/* Nav */}
 			<nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
 				{NAV.map(({ href, label, Icon, ...rest }) => {
-					const active = 'exact' in rest && rest.exact ? pathname === href : pathname.startsWith(href);
+					// strip locale prefix from the real path before matching
+					const bare = '/' + (pathname ?? '').split('/').filter(Boolean).slice(1).join('/');
+					const target = href === '/admin' ? '/admin' : href;
+					const active =
+						'exact' in rest && rest.exact
+							? bare === target
+							: bare === target || bare.startsWith(target + '/');
 					return (
 						<Link
 							key={href}

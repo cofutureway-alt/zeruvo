@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
 	LayoutDashboard,
@@ -43,7 +42,7 @@ export function DashboardShell(props: {
 					{userNav.map(({ href, labelKey, Icon }) => (
 						<Link
 							key={href}
-							href={href as '/' & string}
+							href={href}
 							className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/60 hover:text-[var(--nx-text)]"
 						>
 							<Icon size={16} />

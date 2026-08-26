@@ -1,0 +1,159 @@
+import { useState } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import {
+	LayoutDashboard,
+	KeyRound,
+	ScrollText,
+	CreditCard,
+	Settings,
+	LogOut,
+	ShieldCheck,
+	Boxes,
+	Building2,
+	Users,
+	Ticket,
+	Megaphone,
+	Wallet,
+	PanelLeftClose,
+	PanelLeftOpen,
+} from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+type NavItem = {
+	to: string;
+	label?: string;
+	labelKey?: string;
+	Icon: typeof LayoutDashboard;
+};
+
+const userNav: NavItem[] = [
+	{ to: '/dashboard', labelKey: 'overview', Icon: LayoutDashboard },
+	{ to: '/dashboard/keys', labelKey: 'apiKeys', Icon: KeyRound },
+	{ to: '/dashboard/logs', labelKey: 'logs', Icon: ScrollText },
+	{ to: '/dashboard/plans', labelKey: 'plans', Icon: CreditCard },
+	{ to: '/dashboard/settings', labelKey: 'settings', Icon: Settings },
+];
+
+const adminNav: NavItem[] = [
+	{ to: '/admin', label: 'Overview', Icon: Boxes },
+	{ to: '/admin/providers', label: 'Providers', Icon: Wallet },
+	{ to: '/admin/models', label: 'Models & Categories', Icon: Building2 },
+	{ to: '/admin/plans', label: 'Plans', Icon: CreditCard },
+	{ to: '/admin/users', label: 'Users', Icon: Users },
+	{ to: '/admin/payments', label: 'Payments', Icon: Wallet },
+	{ to: '/admin/coupons', label: 'Coupons', Icon: Ticket },
+	{ to: '/admin/announcements', label: 'Announcements', Icon: Megaphone },
+	{ to: '/admin/gateways', label: 'Payment Gateways', Icon: Settings },
+];
+
+/**
+ * Console shell used by both dashboards.
+ * variant="user" shows the user nav; variant="admin" the admin nav
+ * (routes are already guarded in main.tsx).
+ */
+export function DashboardShell({
+	variant,
+	email,
+	children,
+}: {
+	variant: 'user' | 'admin';
+	email: string;
+	children?: React.ReactNode;
+}) {
+	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const location = useLocation();
+	const [collapsed, setCollapsed] = useState(false);
+
+	const nav = variant === 'user' ? userNav : adminNav;
+
+	async function logout() {
+		await supabase.auth.signOut();
+		navigate('/login', { replace: true });
+	}
+
+	function isActive(to: string) {
+		const bare = location.pathname;
+		if (to === '/admin' || to === '/dashboard') return bare === to;
+		return bare === to || bare.startsWith(to + '/');
+	}
+
+	return (
+		<div className="flex min-h-dvh bg-[var(--nx-bg)]">
+			<aside
+				className={`sticky top-0 flex h-dvh shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-[width] duration-200 ${
+					collapsed ? 'w-[68px]' : 'w-64'
+				}`}
+			>
+				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
+					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
+						N
+					</div>
+					{!collapsed && (
+						<div className="min-w-0">
+							<p className="truncate text-sm font-semibold tracking-tight">Nexor AI</p>
+							<p className="truncate text-[11px] text-[var(--nx-muted)]">
+								{variant === 'admin' ? 'Admin Console' : 'Console'}
+							</p>
+						</div>
+					)}
+				</div>
+
+				<nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
+					{nav.map(({ to, label, labelKey, Icon }) => (
+						<Link
+							key={to}
+							to={to}
+							title={collapsed ? String(label ?? t(`dashboard.${labelKey}`)) : undefined}
+							className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+								isActive(to)
+									? 'bg-indigo-500/10 font-medium text-indigo-400'
+									: 'text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100'
+							}`}
+						>
+							{isActive(to) && (
+								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-indigo-400" />
+							)}
+							<Icon size={17} className="shrink-0" />
+							{!collapsed && <span className="truncate">{label ?? t(`dashboard.${labelKey}`)}</span>}
+						</Link>
+					))}
+				</nav>
+
+				<div className="border-t border-[var(--nx-border)] p-2.5">
+					<Link
+						to={variant === 'admin' ? '/dashboard' : '/admin'}
+						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+					>
+						<ShieldCheck size={17} className="shrink-0" />
+						{!collapsed && <span>{variant === 'admin' ? 'User view' : 'Admin'}</span>}
+					</Link>
+					<button
+						onClick={logout}
+						className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+					>
+						<LogOut size={17} className="shrink-0" />
+						{!collapsed && <span>{t('common.logout')}</span>}
+					</button>
+					<div className="mt-1 flex items-center justify-between gap-2 border-t border-[var(--nx-border)] pt-2.5">
+						{!collapsed && (
+							<span className="min-w-0 truncate px-2 text-[11px] text-[var(--nx-muted)]">{email}</span>
+						)}
+						<button
+							onClick={() => setCollapsed((c) => !c)}
+							className="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+							aria-label="Toggle sidebar"
+						>
+							{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+						</button>
+					</div>
+				</div>
+			</aside>
+
+			<main className="min-w-0 flex-1 p-8">
+				{children ?? <Outlet />}
+			</main>
+		</div>
+	);
+}
