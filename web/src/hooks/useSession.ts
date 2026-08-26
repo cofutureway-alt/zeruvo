@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Single source of auth truth for the whole SPA.
- * Boots from the restored session, then live-updates on sign-in/out.
+ * One hook instance worth of state per consumer, but role is resolved
+ * in the SAME effect chain as the session — no separate race.
  */
 export function useSession() {
 	const [session, setSession] = useState<Session | null>(null);
@@ -29,7 +30,6 @@ export function useSession() {
 	return { session, user: session?.user ?? null, loading };
 }
 
-/** Is the current session an admin? Null while unknown. */
 export function useIsAdmin() {
 	const { session } = useSession();
 	const [admin, setAdmin] = useState<boolean | null>(null);
@@ -39,12 +39,17 @@ export function useIsAdmin() {
 			setAdmin(false);
 			return;
 		}
+		let cancelled = false;
+		setAdmin(null); // resolving
 		void supabase
 			.from('profiles')
 			.select('role')
 			.eq('id', session.user.id)
 			.single()
-			.then(({ data }) => setAdmin(data?.role === 'admin'));
+			.then(({ data }) => {
+				if (!cancelled) setAdmin(data?.role === 'admin');
+			});
+		return () => { cancelled = true; };
 	}, [session]);
 
 	return admin;

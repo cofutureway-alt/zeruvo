@@ -3,13 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LayoutDashboard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useSession, useIsAdmin } from '../hooks/useSession';
+import { useAuth } from '../auth-context';
 
 export function SiteHeader() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	const { user, loading } = useSession();
-	const isAdmin = useIsAdmin();
+	const { user, loading, isAdmin } = useAuth();
 	const [open, setOpen] = useState(false);
 
 	const links = [

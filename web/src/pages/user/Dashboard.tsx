@@ -122,9 +122,26 @@ export default function Dashboard() {
 					</div>
 				</div>
 
+				{!allowance && (
+					<div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-5">
+						<div>
+							<h3 className="font-display font-semibold text-amber-400">You're not subscribed to any plan</h3>
+							<p className="mt-1 text-sm text-[var(--nx-muted)]">
+								The API rejects requests until you subscribe. Pick a plan to get a daily weighted-token allowance.
+							</p>
+						</div>
+						<a
+							href="/dashboard/plans"
+							className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,124,255,0.25)] hover:bg-indigo-500"
+						>
+							Browse plans
+						</a>
+					</div>
+				)}
+
 				<div className="grid gap-4 sm:grid-cols-3">
 					<Card title="Plan">
-						<p className="text-xl font-semibold">{planName}</p>
+						<p className={`text-xl font-semibold ${planName === '—' ? 'text-amber-400' : ''}`}>{planName}</p>
 					</Card>
 					<Card title="Renews / expires">
 						<p className="text-xl font-semibold tabular-nums">{expires}</p>

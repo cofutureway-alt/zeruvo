@@ -9,7 +9,8 @@ const env = fs.readFileSync('.env.local', 'utf8');
 const url = env.match(/NEXT_PUBLIC_SUPABASE_URL=(.+)/)[1].trim();
 const svc = env.match(/SUPABASE_SERVICE_ROLE_KEY=(.+)/)[1].trim();
 const dek = env.match(/NEXOR_ENCRYPTION_KEY=(.+)/)[1].trim();
-const BASE = 'http://localhost:3100';
+const BASE = 'https://unacmcjzwxoyerllvdmt.functions.supabase.co';
+const WEBHOOK_URL = BASE + '/kashier-webhook';
 const H = { apikey: svc, Authorization: `Bearer ${svc}`, 'Content-Type': 'application/json' };
 
 function rfc3986(v) {
@@ -31,15 +32,26 @@ async function encryptKey(plaintext) {
 	// setup: gateway config with known apiKey + paid test plan + pending payment
 	const API_KEY = 'test-api-key-' + Date.now();
 	const encKey = await encryptKey(API_KEY);
-	await fetch(`${url}/rest/v1/payment_gateways`, {
-		method: 'POST',
-		headers: { ...H, Prefer: 'resolution=merge-duplicates' },
+	// upsert manually (POST then PATCH fallback) — merge-duplicates proved flaky
+	let gwRes = await fetch(`${url}/rest/v1/payment_gateways`, {
+		method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates' },
 		body: JSON.stringify({
 			gateway: 'kashier', enabled: true, mode: 'test',
 			merchant_id: 'MID-TEST-0001', encrypted_api_key: encKey,
 			encrypted_secret_key: encKey,
 		}),
 	});
+	if (!gwRes.ok) {
+		gwRes = await fetch(`${url}/rest/v1/payment_gateways?gateway=eq.kashier`, {
+			method: 'PATCH', headers: H,
+			body: JSON.stringify({
+				enabled: true, mode: 'test',
+				merchant_id: 'MID-TEST-0001', encrypted_api_key: encKey,
+				encrypted_secret_key: encKey,
+			}),
+		});
+	}
+	console.log('gateway config write:', gwRes.ok ? 'ok' : await gwRes.text());
 
 	// find or create Pro-like paid plan
 	let plans = await (await fetch(`${url}/rest/v1/plans?is_free=eq.false&active=eq.true&select=id,name,price_usd,duration_unit,duration_count&limit=1`, { headers: H })).json();
@@ -92,23 +104,23 @@ async function encryptKey(plaintext) {
 	void sig;
 
 	// 1) TAMPERED signature must be rejected
-	let res = await fetch(`${BASE}/api/webhooks/kashier`, {
+	let res = await fetch(`${WEBHOOK_URL}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json', 'x-kashier-signature': 'deadbeef'.repeat(8) },
+		headers: { 'Content-Type': 'application/json', 'x-kashier-signature': 'deadbeef'.repeat(8), apikey: svc },
 		body: JSON.stringify(webhookBody),
 	});
 	console.log('tampered signature →', res.status, '(expect 401)');
 
 	// 2) VALID signature → subscription activated
-	res = await fetch(`${BASE}/api/webhooks/kashier`, {
+	res = await fetch(`${WEBHOOK_URL}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json', 'x-kashier-signature': sig },
+		headers: { 'Content-Type': 'application/json', 'x-kashier-signature': sig, apikey: svc },
 		body: JSON.stringify(webhookBody),
 	});
 	console.log('valid signature →', res.status, await res.text(), '(expect handled:"paid")');
 
 	// 3) REPLAY of same success → idempotent ack
-	res = await fetch(`${BASE}/api/webhooks/kashier`, {
+	res = await fetch(`${WEBHOOK_URL}`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'x-kashier-signature': sig },
 		body: JSON.stringify(webhookBody),

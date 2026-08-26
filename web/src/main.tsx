@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './index.css';
 import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
+import { AuthProvider } from './auth-context';
 import { ProtectedRoute, AdminRoute, GuestRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
 import Home from './pages/marketing/Home';
@@ -43,6 +44,7 @@ function App() {
 	return (
 		<BrowserRouter>
 			<Root />
+			<AuthProvider>
 			<Routes>
 				<Route element={<AppLayout />}>
 					{/* marketing */}
@@ -193,6 +195,7 @@ function App() {
 				</Route>
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
+			</AuthProvider>
 		</BrowserRouter>
 	);
 }

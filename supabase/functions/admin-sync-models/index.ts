@@ -1,8 +1,10 @@
 // deno-lint-ignore-file no-explicit-any
 /**
- * admin-sync-models — pulls the upstream provider /models catalog into our
- * models table (disabled by default). Admin-only. Decrypts the provider's
- * first live key server-side to call the upstream API.
+ * admin-sync-models — pulls the upstream provider /models catalog with
+ * FULL metadata (context length, pricing, modality, capabilities) and maps
+ * OpenRouter's rich model objects onto our models table.
+ * Admin-only. New models are disabled by default; existing selections and
+ * multipliers are preserved across syncs.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -15,79 +17,159 @@ function b64ToBytes(b64: string): Uint8Array {
 
 async function decrypt(stored: string, dekB64: string): Promise<string> {
 	const bytes = b64ToBytes(stored);
-	const nonce = bytes.slice(0, 12);
-	const ciphertext = bytes.slice(12);
+	const nonce = bytes.slice(0, 12), ct = bytes.slice(12);
 	const raw = b64ToBytes(dekB64);
 	const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
-	const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ciphertext);
-	return new TextDecoder().decode(plain);
+	return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ct));
+}
+
+interface ORModel {
+	id: string;
+	name?: string;
+	description?: string;
+	context_length?: number;
+	architecture?: {
+		modality?: string;
+		input_modalities?: string[];
+		output_modalities?: string[];
+	};
+	pricing?: Record<string, string>;
+	top_provider?: { max_completion_tokens?: number };
+}
+
+/** Capability tags from OpenRouter metadata (stored in our tags[] column). */
+function deriveTags(m: ORModel): string[] {
+	const tags: string[] = [];
+	const mods = m.architecture?.input_modalities ?? [];
+	if (mods.includes('image')) tags.push('vision');
+	if ((m.architecture?.output_modalities ?? []).includes('image')) tags.push('image-output');
+	if (/coder|code/i.test(m.id)) tags.push('coding');
+	if (/reasoning|thinking/i.test(m.id) || m.pricing?.internal_reasoning) tags.push('reasoning');
+	if (/free$|:free/i.test(m.id)) tags.push('free');
+	const promptPrice = Number(m.pricing?.prompt ?? '1');
+	if (promptPrice === 0) tags.push('free');
+	else if (promptPrice < 0.0000005) tags.push('cheap');
+	else if (promptPrice > 0.000003) tags.push('premium');
+	return [...new Set(tags)];
 }
 
 Deno.serve(async (req) => {
-	if (req.method !== 'POST') {
-		return Response.json({ error: 'method not allowed' }, { status: 405 });
-	}
+// CORS: the SPA calls these functions directly from the browser
+const CORS_HEADERS = {
+	'Access-Control-Allow-Origin': '*',
+	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
+};
+
+if (req.method === 'OPTIONS') {
+	return new Response('ok', { headers: CORS_HEADERS });
+}
+
+	if (req.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405, headers: CORS_HEADERS })
 	const authHeader = req.headers.get('Authorization') ?? '';
 	const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
 		global: { headers: { Authorization: authHeader } },
 	});
 	const { data: { user } } = await supabase.auth.getUser();
-	if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 });
+	if (!user) return Response.json({ error: 'unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
 	const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 	const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single();
-	if (profile?.role !== 'admin') return Response.json({ error: 'forbidden' }, { status: 403 });
+	if (profile?.role !== 'admin') return Response.json({ error: 'forbidden' }, { status: 403, headers: CORS_HEADERS })
 
-	const { provider_id } = await req.json().catch(() => ({ provider_id: null }));
-	if (!provider_id) return Response.json({ error: 'provider_id required' }, { status: 400 });
+	let body: { provider_id?: string };
+	try { body = await req.json(); } catch { return Response.json({ error: 'invalid json' }, { status: 400, headers: CORS_HEADERS }) }
+	if (!body.provider_id) return Response.json({ error: 'provider_id required' }, { status: 400, headers: CORS_HEADERS })
 
-	const { data: provider } = await admin.from('providers').select('*').eq('id', provider_id).single();
-	if (!provider) return Response.json({ error: 'provider not found' }, { status: 404 });
+	const { data: provider } = await admin.from('providers').select('*').eq('id', body.provider_id).single();
+	if (!provider) return Response.json({ error: 'provider not found' }, { status: 404, headers: CORS_HEADERS })
 
-	const { data: keys } = await admin
-		.from('provider_keys')
-		.select('encrypted_key,dead_until,label')
-		.eq('provider_id', provider_id);
-	const liveKey = (keys ?? []).find((k) => !k.dead_until || new Date(k.dead_until) <= new Date());
-	if (!liveKey) return Response.json({ error: 'no live keys' }, { status: 403 });
+	const { data: keys } = await admin.from('provider_keys')
+		.select('id,encrypted_key,dead_until,label')
+		.eq('provider_id', body.provider_id);
 
-	let apiKey: string;
-	try {
-		apiKey = await decrypt(liveKey.encrypted_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
-	} catch {
-		return Response.json({ error: 'key decrypt failed' }, { status: 500 });
+	// probe every key; keep the first live one for the catalog pull
+	const keyResults: Array<{ label: string; ok: boolean; detail: string }> = [];
+	let apiKey: string | null = null;
+	for (const k of keys ?? []) {
+		if (apiKey) break;
+		if (k.dead_until && new Date(k.dead_until) > new Date()) {
+			keyResults.push({ label: k.label, ok: false, detail: 'marked dead' });
+			continue;
+		}
+		try {
+			apiKey = await decrypt(k.encrypted_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
+			keyResults.push({ label: k.label, ok: true, detail: 'loaded' });
+		} catch {
+			keyResults.push({ label: k.label, ok: false, detail: 'decrypt failed' });
+		}
 	}
+	if (!apiKey) return Response.json({ error: 'no usable keys', keys: keyResults }, { status: 403, headers: CORS_HEADERS })
 
 	const base = String(provider.base_url).replace(/\/+$/, '');
 	const res = await fetch(`${base}/models`, {
-		headers:
-			provider.kind === 'openrouter'
-				? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://nexor.ai' }
-				: { Authorization: `Bearer ${apiKey}` },
+		headers: provider.kind === 'openrouter'
+			? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://nexor.ai' }
+			: { Authorization: `Bearer ${apiKey}` },
 	});
-	if (!res.ok) return Response.json({ error: `upstream ${res.status}` }, { status: 502 });
+	if (!res.ok) return Response.json({ error: `upstream ${res.status}` }, { status: 502, headers: CORS_HEADERS })
 	const json = await res.json();
-	const upstreamIds: string[] = (json.data ?? []).map((m: { id: string }) => m.id);
+
+	type AnyModel = Record<string, any>;
+	const upstream: AnyModel[] = json.data ?? [];
+	const isRich = upstream.some((m) => m.context_length != null || m.pricing != null);
 
 	const { data: existing } = await admin
 		.from('models')
-		.select('upstream_model_id')
-		.eq('provider_id', provider_id);
-	const known = new Set((existing ?? []).map((m) => m.upstream_model_id));
+		.select('id,upstream_model_id,enabled_for_users,usage_multiplier,tags')
+		.eq('provider_id', body.provider_id);
+	const byUpstream = new Map((existing ?? []).map((m) => [m.upstream_model_id, m]));
 
-	const toInsert = upstreamIds
-		.filter((id) => !known.has(id))
-		.map((id) => ({
-			provider_id,
-			upstream_model_id: id,
-			display_name: id,
-			slug: id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, ''),
-			usage_multiplier: 1,
-			enabled_for_users: false,
-		}));
-	if (toInsert.length) {
-		await admin.from('models').insert(toInsert);
+	let added = 0, updatedMeta = 0;
+	const rows: any[] = [];
+
+	for (const m of upstream) {
+		const prev = byUpstream.get(m.id);
+		// build metadata-rich row
+		const row: any = {
+			provider_id: body.provider_id,
+			upstream_model_id: m.id,
+			slug: m.id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, ''),
+		};
+
+		if (isRich) {
+			const orm = m as unknown as ORModel;
+			row.display_name = orm.name ?? orm.id;
+			row.description = orm.description ? orm.description.slice(0, 500) : null;
+			row.context_window = orm.context_length ?? null;
+			row.tags = deriveTags(orm);
+		} else {
+			row.display_name = m.id;
+		}
+
+		if (!prev) {
+			row.enabled_for_users = false;
+			row.usage_multiplier = 1;
+			rows.push(row);
+			added++;
+		} else if (isRich) {
+			// refresh metadata but preserve admin choices
+			await admin.from('models').update({
+				display_name: row.display_name,
+				description: row.description,
+				context_window: row.context_window,
+				tags: row.tags,
+			}).eq('id', prev.id);
+			updatedMeta++;
+		}
 	}
 
-	return Response.json({ synced: upstreamIds.length, added: toInsert.length });
+	if (rows.length) await admin.from('models').insert(rows);
+
+	return Response.json({
+		synced: upstream.length,
+		added,
+		updated_meta: updatedMeta,
+		rich_metadata: isRich,
+		keys_probed: keyResults,
+	});
 });

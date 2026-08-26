@@ -28,6 +28,16 @@ async function encrypt(plaintext: string, dekB64: string): Promise<string> {
 }
 
 Deno.serve(async (req) => {
+// CORS: the SPA calls these functions directly from the browser
+const CORS_HEADERS = {
+	'Access-Control-Allow-Origin': '*',
+	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
+};
+
+if (req.method === 'OPTIONS') {
+	return new Response('ok', { headers: CORS_HEADERS });
+}
+
 	if (req.method !== 'POST') {
 		return new Response(JSON.stringify({ error: 'method not allowed' }), { status: 405 });
 	}

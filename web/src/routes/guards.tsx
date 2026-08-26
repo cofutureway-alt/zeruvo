@@ -1,15 +1,13 @@
 import { type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useSession, useIsAdmin } from '../hooks/useSession';
+import { useAuth } from '../auth-context';
 
 /**
- * Route guards — the SPA replacement for the old Next.js proxy.ts.
- * Session state comes from the live useSession() hook (restored session
- * + onAuthStateChange), so a signed-in user never sees auth pages again.
+ * Route guards reading the single AuthProvider state — no races.
  */
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-	const { user, loading } = useSession();
+	const { user, loading } = useAuth();
 	const location = useLocation();
 
 	if (loading) return <FullscreenSpinner />;
@@ -18,22 +16,21 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 export function AdminRoute({ children }: { children: ReactNode }) {
-	const { user, loading } = useSession();
-	const admin = useIsAdmin();
+	const { user, isAdmin, loading } = useAuth();
 	const location = useLocation();
 
-	if (loading || (user && admin === null)) return <FullscreenSpinner />;
+	// wait until BOTH session and role are resolved
+	if (loading || isAdmin === null) return <FullscreenSpinner />;
 	if (!user) return <Navigate to="/login" replace state={{ next: location.pathname }} />;
-	// signed in but not an admin -> bounce to their dashboard
-	if (admin === false) return <Navigate to="/dashboard" replace />;
+	if (!isAdmin) return <Navigate to="/dashboard" replace />;
 	return children;
 }
 
 /** Reverse guard: keep authenticated users off login/signup. */
 export function GuestRoute({ children }: { children: ReactNode }) {
-	const { user, loading } = useSession();
+	const { user, loading } = useAuth();
 
-	if (loading) return <FullscreenSpinner />;
+	if (loading || user === undefined) return <FullscreenSpinner />;
 	if (user) return <Navigate to="/dashboard" replace />;
 	return children;
 }
