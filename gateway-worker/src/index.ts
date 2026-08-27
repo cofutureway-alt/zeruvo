@@ -1,5 +1,5 @@
 /**
- * Nexor AI Gateway — Cloudflare Worker
+ * Zeruvo AI Gateway — Cloudflare Worker
  * Routes (client wire preserved end-to-end):
  *   POST /v1/chat/completions          → OpenAI wire
  *   POST /v1/messages                  → Anthropic wire
@@ -332,8 +332,8 @@ async function forwardToProvider(
 		const base = normalizeBase(resolved.provider_base_url);
 		headers['Authorization'] = `Bearer ${apiKey}`;
 		if (resolved.provider_kind === 'openrouter') {
-			headers['HTTP-Referer'] = 'https://nexor.ai';
-			headers['X-Title'] = 'Nexor AI';
+			headers['HTTP-Referer'] = 'https://zeruvo.online';
+			headers['X-Title'] = 'Zeruvo AI';
 		}
 		payload = toOpenAI(neutral);
 		// ask the provider to include usage in the final stream chunk,

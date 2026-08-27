@@ -144,7 +144,7 @@ if (req.method === 'OPTIONS') {
 				const base = String(provider.base_url).replace(/\/+$/, '');
 				const headers: Record<string, string> =
 					provider.kind === 'openrouter'
-						? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://nexor.ai' }
+						? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://zeruvo.online' }
 						: { Authorization: `Bearer ${apiKey}` };
 
 				const t0 = Date.now();

@@ -1,5 +1,5 @@
 -- ============================================================
--- Nexor AI — Phase 2: gateway Worker RPCs
+-- Zeruvo AI — Phase 2: gateway Worker RPCs
 -- service_role-only helpers for key retrieval + dead marking.
 -- ============================================================
 

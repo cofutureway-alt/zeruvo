@@ -108,7 +108,7 @@ if (req.method === 'OPTIONS') {
 	const base = String(provider.base_url).replace(/\/+$/, '');
 	const res = await fetch(`${base}/models`, {
 		headers: provider.kind === 'openrouter'
-			? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://nexor.ai' }
+			? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://zeruvo.online' }
 			: { Authorization: `Bearer ${apiKey}` },
 	});
 	if (!res.ok) return Response.json({ error: `upstream ${res.status}` }, { status: 502, headers: CORS_HEADERS })

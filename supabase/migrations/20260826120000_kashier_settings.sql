@@ -1,5 +1,5 @@
 -- ============================================================
--- Nexor AI — Phase 5: payment gateway settings (admin-configurable)
+-- Zeruvo AI — Phase 5: payment gateway settings (admin-configurable)
 -- ============================================================
 
 create table public.payment_gateways (

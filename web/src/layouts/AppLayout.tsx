@@ -16,7 +16,7 @@ export function AppLayout() {
 				<Outlet />
 			</main>
 			<footer className="border-t border-[var(--nx-border)] py-10 text-center text-xs text-[var(--nx-muted)]">
-				Nexor AI — unified AI gateway
+				Zeruvo AI — unified AI gateway
 			</footer>
 		</>
 	);

@@ -78,7 +78,7 @@ export default function Models() {
 		<main className="mx-auto max-w-6xl px-6 py-12">
 			<h1 className="text-2xl font-semibold tracking-tight">Models</h1>
 			<p className="mt-1 text-sm text-[var(--nx-muted)]">
-				Every model available through the Nexor gateway, with weighted pricing multipliers.
+				Every model available through the Zeruvo gateway, with weighted pricing multipliers.
 			</p>
 
 			<div className="mt-8 flex flex-wrap items-center gap-3">

@@ -1,4 +1,4 @@
--- Nexor AI seed: default free plan + smoke-test data
+-- Zeruvo AI seed: default free plan + smoke-test data
 insert into public.plans (name, description, daily_weighted_tokens, price_usd, duration_unit, duration_count, is_free, default_free)
 values (
   '{"en":"Free","ar":"مجانية","fr":"Gratuit","zh":"免费"}'::jsonb,

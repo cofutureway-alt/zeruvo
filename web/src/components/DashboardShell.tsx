@@ -92,7 +92,7 @@ export function DashboardShell({
 					</div>
 					{!collapsed && (
 						<div className="min-w-0">
-							<p className="truncate text-sm font-semibold tracking-tight">Nexor AI</p>
+							<p className="truncate text-sm font-semibold tracking-tight">Zeruvo AI</p>
 							<p className="truncate text-[11px] text-[var(--nx-muted)]">
 								{variant === 'admin' ? 'Admin Console' : 'Console'}
 							</p>

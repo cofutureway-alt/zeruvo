@@ -29,7 +29,7 @@ export function SiteHeader() {
 					<span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
 						N
 					</span>
-					<span className="font-semibold tracking-tight">Nexor AI</span>
+					<span className="font-semibold tracking-tight">Zeruvo AI</span>
 				</Link>
 
 				<nav className="hidden items-center gap-7 text-sm md:flex">

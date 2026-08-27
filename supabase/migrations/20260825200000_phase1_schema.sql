@@ -1,5 +1,5 @@
 -- ============================================================
--- Nexor AI — Phase 1: core schema, RLS, atomic quota RPCs, cron
+-- Zeruvo AI — Phase 1: core schema, RLS, atomic quota RPCs, cron
 -- ============================================================
 -- Conventions:
 --  * Every table has RLS. Owner-scoped reads via auth.uid().

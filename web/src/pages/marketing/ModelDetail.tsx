@@ -28,7 +28,7 @@ export default function ModelDetail() {
 				.maybeSingle();
 			setModel(data ? (data as unknown as ModelFull) : null);
 			setLoading(false);
-			if (data) document.title = `${(data as ModelFull).display_name} · Nexor AI`;
+			if (data) document.title = `${(data as ModelFull).display_name} · Zeruvo AI`;
 		})();
 	}, [slug]);
 
@@ -68,7 +68,7 @@ export default function ModelDetail() {
 
 			<p className="mt-6 leading-relaxed text-[var(--nx-muted)]">
 				{model.description ??
-					`${model.display_name} is served through the Nexor gateway. Every token consumed is multiplied by ${mult} against your plan's daily weighted allowance.`}
+					`${model.display_name} is served through the Zeruvo gateway. Every token consumed is multiplied by ${mult} against your plan's daily weighted allowance.`}
 			</p>
 
 			<dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
