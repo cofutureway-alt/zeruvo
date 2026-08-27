@@ -1,7 +1,10 @@
+// Gateway base URL — override per-deployment with VITE_GATEWAY_URL.
+const GATEWAY = import.meta.env.VITE_GATEWAY_URL ?? 'https://api.zeruvo.online';
+
 const SNIPPETS = [
 	{
 		title: 'OpenAI-compatible',
-		code: `curl https://nexor-gateway.alammmedd4.workers.dev/v1/chat/completions \\
+		code: `curl ${GATEWAY}/v1/chat/completions \\
   -H "Authorization: Bearer $NEXOR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}'`,
@@ -14,7 +17,7 @@ const SNIPPETS = [
 	},
 	{
 		title: 'Anthropic native',
-		code: `curl https://nexor-gateway.alammmedd4.workers.dev/v1/messages \\
+		code: `curl ${GATEWAY}/v1/messages \\
   -H "x-api-key: $NEXOR_API_KEY" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\

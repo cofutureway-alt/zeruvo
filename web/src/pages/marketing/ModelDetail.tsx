@@ -81,7 +81,7 @@ export default function ModelDetail() {
 			<section className="mt-10 rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-5">
 				<h2 className="text-sm font-semibold">Quick start</h2>
 				<pre dir="ltr" className="mt-3 overflow-x-auto rounded-lg bg-zinc-900 p-4 font-mono text-xs leading-relaxed text-zinc-300">
-{`curl https://nexor-gateway.alammmedd4.workers.dev/v1/chat/completions \\
+{`curl ${import.meta.env.VITE_GATEWAY_URL ?? 'https://api.zeruvo.online'}/v1/chat/completions \\
   -H "Authorization: Bearer $NEXOR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
