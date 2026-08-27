@@ -46,6 +46,24 @@ function App() {
 			<Root />
 			<AuthProvider>
 			<Routes>
+				{/* auth pages — standalone, no AppLayout (aurora background fills viewport) */}
+				<Route
+					path="/login"
+					element={
+						<GuestRoute>
+							<Login />
+						</GuestRoute>
+					}
+				/>
+				<Route
+					path="/signup"
+					element={
+						<GuestRoute>
+							<Signup />
+						</GuestRoute>
+					}
+				/>
+
 				<Route element={<AppLayout />}>
 					{/* marketing */}
 					<Route path="/" element={<Home />} />
@@ -53,23 +71,6 @@ function App() {
 					<Route path="/models/:slug" element={<ModelDetail />} />
 					<Route path="/pricing" element={<Pricing />} />
 					<Route path="/docs" element={<Docs />} />
-					{/* auth — signed-in users are redirected to their dashboard */}
-					<Route
-						path="/login"
-						element={
-							<GuestRoute>
-								<Login />
-							</GuestRoute>
-						}
-					/>
-					<Route
-						path="/signup"
-						element={
-							<GuestRoute>
-								<Signup />
-							</GuestRoute>
-						}
-					/>
 					{/* user dashboard */}
 					<Route
 						path="/dashboard"

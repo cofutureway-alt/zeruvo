@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
+import { ModelUsageTable } from '../../components/ModelUsageTable';
+import { TimeRangeFilter } from '../../components/TimeRangeFilter';
+import { useModelUsage, type TimeRange } from '../../hooks/useModelUsage';
 
 interface Sub {
 	expires_at: string;
@@ -16,6 +19,8 @@ export default function Dashboard() {
 	const [planName, setPlanName] = useState('—');
 	const [expires, setExpires] = useState('—');
 	const [chartData, setChartData] = useState<Array<{ date: string; consumed: number }>>([]);
+	const [range, setRange] = useState<TimeRange>('30d');
+	const { data: usage, loading, total } = useModelUsage(range);
 
 	useEffect(() => {
 		void (async () => {
@@ -150,6 +155,18 @@ export default function Dashboard() {
 						<p className="text-xl font-semibold tabular-nums">{reserved.toLocaleString()}</p>
 					</Card>
 				</div>
+
+				{/* Model usage */}
+				<section className="space-y-4">
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<div>
+							<h3 className="text-sm font-medium">Model usage</h3>
+							<p className="text-xs text-[var(--nx-muted)]">Token consumption by model.</p>
+						</div>
+						<TimeRangeFilter value={range} onChange={setRange} />
+					</div>
+					<ModelUsageTable data={usage} loading={loading} total={total} />
+				</section>
 			</div>
 		</DashboardShell>
 	);
