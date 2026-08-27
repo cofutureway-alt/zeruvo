@@ -10,5 +10,8 @@
   },
   "workspaces": [
     "web"
-  ]
+  ],
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  }
 }
