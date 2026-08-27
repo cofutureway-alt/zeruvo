@@ -53,7 +53,7 @@ export default function AdminPlans() {
 						<h1 className="text-xl font-semibold tracking-tight">Plans</h1>
 						<p className="mt-0.5 text-sm text-[var(--nx-muted)]">Subscription tiers with daily weighted-token allowances.</p>
 					</div>
-					<button onClick={() => setEditing('new')} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+					<button onClick={() => setEditing('new')} className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
 						<Plus size={16} />
 						New plan
 					</button>
@@ -75,7 +75,7 @@ export default function AdminPlans() {
 							</div>
 							<p className="mt-2 text-sm tabular-nums text-[var(--nx-muted)]">{Number(p.daily_weighted_tokens).toLocaleString()} weighted tokens / day</p>
 							<p className="mt-1 text-xs text-[var(--nx-muted)]">{(p.plan_models ?? []).length} models included</p>
-							<button onClick={() => setEditing(p)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--nx-border)] py-2 text-sm hover:border-indigo-500/50 hover:text-indigo-300">
+							<button onClick={() => setEditing(p)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--nx-border)] py-2 text-sm hover:border-cyan-500/50 hover:text-cyan-300">
 								<Pencil size={14} />
 								Edit
 							</button>
@@ -156,8 +156,8 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 					<div className="grid grid-cols-2 gap-3">
 						{LOCALES.map((l) => (
 							<div key={l} className="space-y-1.5">
-								<input value={name[l] ?? ''} onChange={(e) => setName({ ...name, [l]: e.target.value })} placeholder={`Name (${l})${l === 'en' ? ' — required' : ''}`} className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
-								<input value={description[l] ?? ''} onChange={(e) => setDescription({ ...description, [l]: e.target.value })} placeholder={`Description (${l})`} className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+								<input value={name[l] ?? ''} onChange={(e) => setName({ ...name, [l]: e.target.value })} placeholder={`Name (${l})${l === 'en' ? ' — required' : ''}`} className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+								<input value={description[l] ?? ''} onChange={(e) => setDescription({ ...description, [l]: e.target.value })} placeholder={`Description (${l})`} className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-xs outline-none focus:border-cyan-500" />
 							</div>
 						))}
 					</div>
@@ -165,19 +165,19 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 					<div className="grid grid-cols-2 gap-3">
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Daily weighted tokens</span>
-							<input type="number" min={1} value={tokens} onChange={(e) => setTokens(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500" />
+							<input type="number" min={1} value={tokens} onChange={(e) => setTokens(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500" />
 						</label>
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Price USD {isFree && '(free)'}</span>
-							<input type="number" min={0} step="0.01" disabled={isFree} value={price} onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500 disabled:opacity-40" />
+							<input type="number" min={0} step="0.01" disabled={isFree} value={price} onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500 disabled:opacity-40" />
 						</label>
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Duration count</span>
-							<input type="number" min={1} value={count} onChange={(e) => setCount(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500" />
+							<input type="number" min={1} value={count} onChange={(e) => setCount(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500" />
 						</label>
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Duration unit</span>
-							<select value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-indigo-500">
+							<select value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-cyan-500">
 								<option value="days">Days</option>
 								<option value="months">Months</option>
 								<option value="years">Years</option>
@@ -200,8 +200,8 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 						<p className="mb-2 text-sm font-medium">Included models <span className="font-normal text-[var(--nx-muted)]">({selected.size})</span></p>
 						<div className="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-[var(--nx-border)] p-2">
 							{props.models.map((m) => (
-								<button key={m.id} onClick={() => toggleModel(m.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-start text-sm hover:bg-indigo-500/5">
-									<span className={`grid size-4 shrink-0 place-items-center rounded border ${selected.has(m.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[var(--nx-border)]'}`}>
+								<button key={m.id} onClick={() => toggleModel(m.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-start text-sm hover:bg-cyan-500/5">
+									<span className={`grid size-4 shrink-0 place-items-center rounded border ${selected.has(m.id) ? 'border-cyan-500 bg-cyan-600 text-white' : 'border-[var(--nx-border)]'}`}>
 										{selected.has(m.id) && <Check size={11} />}
 									</span>
 									<span className="truncate">{m.upstream_model_id}</span>
@@ -215,7 +215,7 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 
 				<footer className="flex justify-end gap-2 border-t border-[var(--nx-border)] px-6 py-4">
 					<button onClick={props.onClose} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
-					<button onClick={save} disabled={busy} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+					<button onClick={save} disabled={busy} className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 						{busy ? 'Saving…' : p ? 'Update plan' : 'Create plan'}
 					</button>
 				</footer>

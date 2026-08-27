@@ -51,7 +51,7 @@ export default function Docs() {
 			<section className="mt-10 rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-5 text-sm text-[var(--nx-muted)]">
 				<p className="font-medium text-zinc-200">Weighted billing</p>
 				<p className="mt-1">
-					Tokens are billed as <span className="font-mono text-indigo-300">raw × model multiplier</span>{' '}
+					Tokens are billed as <span className="font-mono text-cyan-300">raw × model multiplier</span>{' '}
 					against your daily allowance, which resets at 00:00 UTC. When the allowance is exhausted
 					requests return <span className="font-mono">429 insufficient_quota</span>.
 				</p>

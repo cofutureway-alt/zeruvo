@@ -53,7 +53,7 @@ export default function Settings() {
 								onClick={() => setLocale(l)}
 								className={`rounded-lg border px-4 py-2 text-sm transition ${
 									l === i18n.language
-										? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+										? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
 										: 'border-[var(--nx-border)] hover:border-zinc-600'
 								}`}
 							>
@@ -71,20 +71,20 @@ export default function Settings() {
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							placeholder="New password"
-							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 						/>
 						<input
 							type="password"
 							value={confirm}
 							onChange={(e) => setConfirm(e.target.value)}
 							placeholder="Confirm new password"
-							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 						/>
 						{message && <p className={`text-sm ${message.ok ? 'text-emerald-400' : 'text-red-400'}`}>{message.text}</p>}
 						<button
 							onClick={changePassword}
 							disabled={busy}
-							className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+							className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 						>
 							Update password
 						</button>

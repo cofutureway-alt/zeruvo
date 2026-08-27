@@ -3,21 +3,21 @@
 
 /* ============================================================
    Zeruvo AI — "Routing Room" design tokens
-   Deep space violet ground, electric-violet signal, mint data.
+   Deep slate ground, electric-cyan signal, emerald data.
    ============================================================ */
 :root {
 	color-scheme: dark;
-	--nx-bg: #08080f;
-	--nx-bg-raised: #0d0d18;
-	--nx-surface: #101019;
-	--nx-surface-2: #161624;
-	--nx-border: #23233a;
-	--nx-border-bright: #34345a;
-	--nx-text: #eceaf7;
-	--nx-muted: #8e8ca8;
-	--nx-accent: #8b7cff;
-	--nx-accent-strong: #a99cff;
-	--nx-mint: #4ae3b5;
+	--nx-bg: #060a0e;
+	--nx-bg-raised: #0b1118;
+	--nx-surface: #0e1520;
+	--nx-surface-2: #141e2a;
+	--nx-border: #1c2a3a;
+	--nx-border-bright: #2a3e52;
+	--nx-text: #e8edf4;
+	--nx-muted: #7e8ea0;
+	--nx-accent: #06b6d4;
+	--nx-accent-strong: #22d3ee;
+	--nx-mint: #10b981;
 	--nx-danger: #ff6473;
 	--nx-amber: #ffc46b;
 
@@ -49,9 +49,9 @@ body {
 /* ---------- ambient background: routing grid ---------- */
 .nx-grid-bg {
 	background-image:
-		radial-gradient(ellipse 60% 50% at 50% -10%, rgba(139, 124, 255, 0.13), transparent),
-		linear-gradient(rgba(139, 124, 255, 0.035) 1px, transparent 1px),
-		linear-gradient(90deg, rgba(139, 124, 255, 0.035) 1px, transparent 1px);
+		radial-gradient(ellipse 60% 50% at 50% -10%, rgba(6, 182, 212, 0.13), transparent),
+		linear-gradient(rgba(6, 182, 212, 0.035) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(6, 182, 212, 0.035) 1px, transparent 1px);
 	background-size: 100% 100%, 56px 56px, 56px 56px;
 	mask-image: linear-gradient(to bottom, black 55%, transparent 95%);
 }
@@ -192,10 +192,10 @@ body {
 .auth-aurora {
 	opacity: 0.55;
 	background:
-		radial-gradient(50% 50% at 20% 30%, rgba(139,124,255,0.28), transparent 70%),
-		radial-gradient(45% 45% at 80% 20%, rgba(74,227,181,0.18), transparent 70%),
-		radial-gradient(55% 55% at 60% 80%, rgba(139,124,255,0.16), transparent 70%),
-		radial-gradient(40% 40% at 15% 75%, rgba(74,227,181,0.12), transparent 70%);
+		radial-gradient(50% 50% at 20% 30%, rgba(6,182,212,0.28), transparent 70%),
+		radial-gradient(45% 45% at 80% 20%, rgba(16,185,129,0.18), transparent 70%),
+		radial-gradient(55% 55% at 60% 80%, rgba(6,182,212,0.16), transparent 70%),
+		radial-gradient(40% 40% at 15% 75%, rgba(16,185,129,0.12), transparent 70%);
 	filter: blur(40px);
 	animation: auth-aurora 18s ease-in-out infinite;
 }

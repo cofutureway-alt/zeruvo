@@ -26,7 +26,7 @@ export function SiteHeader() {
 		<header className="sticky top-0 z-40 border-b border-[var(--nx-border)] bg-[var(--nx-bg)]/85 backdrop-blur">
 			<div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
 				<Link to="/" className="flex items-center gap-2.5">
-					<span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
+					<span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-sm font-bold text-white">
 						N
 					</span>
 					<span className="font-semibold tracking-tight">Zeruvo AI</span>
@@ -56,7 +56,7 @@ export function SiteHeader() {
 							)}
 							<Link
 								to="/dashboard"
-								className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+								className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
 							>
 								<LayoutDashboard size={15} />
 								{t('nav.dashboard')}
@@ -72,7 +72,7 @@ export function SiteHeader() {
 							</Link>
 							<Link
 								to="/signup"
-								className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+								className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
 							>
 								{t('nav.signup')}
 							</Link>
@@ -98,7 +98,7 @@ export function SiteHeader() {
 					))}
 					{user ? (
 						<div className="mt-2 space-y-2">
-							<Link to="/dashboard" onClick={() => setOpen(false)} className="block rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">
+							<Link to="/dashboard" onClick={() => setOpen(false)} className="block rounded-lg bg-cyan-600 py-2 text-center text-sm font-medium text-white">
 								{t('nav.dashboard')}
 							</Link>
 							<button onClick={() => { setOpen(false); void logout(); }} className="w-full rounded-lg border border-[var(--nx-border)] py-2 text-sm text-[var(--nx-muted)]">
@@ -110,7 +110,7 @@ export function SiteHeader() {
 							<Link to="/login" className="flex-1 rounded-lg border border-[var(--nx-border)] py-2 text-center text-sm">
 								{t('nav.login')}
 							</Link>
-							<Link to="/signup" className="flex-1 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">
+							<Link to="/signup" className="flex-1 rounded-lg bg-cyan-600 py-2 text-center text-sm font-medium text-white">
 								{t('nav.signup')}
 							</Link>
 						</div>

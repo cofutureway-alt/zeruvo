@@ -12,8 +12,8 @@ export default function NotFound() {
 		<main className="relative grid min-h-dvh place-items-center bg-[var(--nx-bg)] px-4">
 			{/* subtle aurora */}
 			<div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-				<div className="absolute -left-1/4 -top-1/4 h-[60vh] w-[60vh] rounded-full bg-indigo-500/8 blur-[120px]" />
-				<div className="absolute -bottom-1/4 -right-1/4 h-[50vh] w-[50vh] rounded-full bg-purple-500/8 blur-[120px]" />
+				<div className="absolute -left-1/4 -top-1/4 h-[60vh] w-[60vh] rounded-full bg-cyan-500/8 blur-[120px]" />
+				<div className="absolute -bottom-1/4 -right-1/4 h-[50vh] w-[50vh] rounded-full bg-teal-500/8 blur-[120px]" />
 			</div>
 
 			<motion.div
@@ -23,7 +23,7 @@ export default function NotFound() {
 				className="relative z-10 text-center"
 			>
 				<div className="mx-auto mb-6 grid size-20 place-items-center rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)]">
-					<SearchX size={36} className="text-indigo-400" />
+					<SearchX size={36} className="text-cyan-400" />
 				</div>
 
 				<h1 className="text-6xl font-bold tracking-tighter text-[var(--nx-text)]">404</h1>
@@ -34,7 +34,7 @@ export default function NotFound() {
 				<div className="mt-8 flex items-center justify-center gap-3">
 					<Link
 						to="/"
-						className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-[0_0_24px_rgba(139,124,255,0.2)] transition-colors hover:bg-indigo-500"
+						className="flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-2.5 text-sm font-medium text-white shadow-[0_0_24px_rgba(6,182,212,0.2)] transition-colors hover:bg-cyan-500"
 					>
 						<Home size={15} />
 						Go home

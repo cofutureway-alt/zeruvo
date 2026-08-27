@@ -116,12 +116,12 @@ export default function AdminModels() {
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder="New category name (e.g. Anthropic)"
-						className="w-80 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+						className="w-80 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 					/>
 					<button
 						onClick={create}
 						disabled={busy || !name.trim()}
-						className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+						className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 					>
 						<Plus size={15} />
 						Add category
@@ -156,7 +156,7 @@ export default function AdminModels() {
 											<p className="text-[11px] text-[var(--nx-muted)]">{members.length} model{members.length === 1 ? '' : 's'}</p>
 										</div>
 
-										<label className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--nx-border)] px-2.5 py-1.5 text-[11px] text-indigo-400 hover:border-indigo-500/60">
+										<label className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--nx-border)] px-2.5 py-1.5 text-[11px] text-cyan-400 hover:border-cyan-500/60">
 											<Upload size={11} />
 											{c.icon_url ? 'Icon' : 'Upload icon'}
 											<input type="file" accept="image/*" className="hidden"
@@ -164,7 +164,7 @@ export default function AdminModels() {
 										</label>
 										<button
 											onClick={() => setAssigning(c)}
-											className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+											className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500"
 										>
 											<Plus size={12} />
 											Add models
@@ -282,7 +282,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 							value={query}
 							onChange={(e) => setQuery(e.target.value)}
 							placeholder="Filter catalog…"
-							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-indigo-500"
+							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
 						/>
 					</label>
 				</div>
@@ -294,9 +294,9 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 						<ul className="min-h-0 flex-1 divide-y divide-[var(--nx-border)] overflow-y-auto">
 							{candidates.map((m) => (
 								<li key={m.id}>
-									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-indigo-500/5">
+									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-cyan-500/5">
 										<span className="truncate font-mono text-xs">{m.upstream_model_id}</span>
-										<Plus size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-indigo-400" />
+										<Plus size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-cyan-400" />
 									</button>
 								</li>
 							))}
@@ -304,7 +304,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 					</section>
 
 					{/* chosen */}
-					<section className="flex min-h-0 flex-col rounded-xl border border-indigo-500/30">
+					<section className="flex min-h-0 flex-col rounded-xl border border-cyan-500/30">
 						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">In {category.name} <span className="text-[var(--nx-muted)]">({chosen.length})</span></h3>
 						<ul className="min-h-0 flex-1 divide-y divide-[var(--nx-border)] overflow-y-auto">
 							{chosen.map((m) => (
@@ -321,7 +321,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 
 				<footer className="flex justify-end gap-2 border-t border-[var(--nx-border)] px-6 py-4">
 					<button onClick={onClose} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
-					<button onClick={save} disabled={saving} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+					<button onClick={save} disabled={saving} className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 						<Check size={14} />
 						{saving ? 'Saving…' : 'Save assignment'}
 					</button>

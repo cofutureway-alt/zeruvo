@@ -105,7 +105,7 @@ export default function Users() {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Search by email…"
-						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-indigo-500"
+						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
 					/>
 				</label>
 
@@ -120,7 +120,7 @@ export default function Users() {
 								<div className="min-w-0 flex-1">
 									<p className="truncate text-sm font-medium">{u.email}</p>
 									<p className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-[var(--nx-muted)]">
-										<span className={`rounded-full px-2 py-0.5 ${u.role === 'admin' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-zinc-700/40 text-zinc-400'}`}>
+										<span className={`rounded-full px-2 py-0.5 ${u.role === 'admin' ? 'bg-cyan-500/10 text-cyan-400' : 'bg-zinc-700/40 text-zinc-400'}`}>
 											{u.role}
 										</span>
 										{u.banned && <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-red-400">banned</span>}
@@ -136,7 +136,7 @@ export default function Users() {
 								</div>
 								<button
 									onClick={() => setManaging(u)}
-									className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
+									className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-medium text-white hover:bg-cyan-500"
 								>
 									Manage
 								</button>
@@ -211,7 +211,7 @@ function UserManagerModal({ user, plans, onClose, onChanged }: {
 										Demote to user
 									</button>
 								) : (
-									<button onClick={() => act('set_role', { role: 'admin' })} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm hover:border-indigo-500/60 hover:text-indigo-300 disabled:opacity-40">
+									<button onClick={() => act('set_role', { role: 'admin' })} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm hover:border-cyan-500/60 hover:text-cyan-300 disabled:opacity-40">
 										{busy === 'set_role' ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
 										Promote to admin
 									</button>
@@ -229,11 +229,11 @@ function UserManagerModal({ user, plans, onClose, onChanged }: {
 								</button>
 							)}
 							<div className="flex gap-2">
-								<select value={moveToPlan} onChange={(e) => setMoveToPlan(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-indigo-500">
+								<select value={moveToPlan} onChange={(e) => setMoveToPlan(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-cyan-500">
 									<option value="">Move to plan…</option>
 									{plans.map((p) => <option key={p.id} value={p.id}>{p.name.en}{Number(0) === 0 && ` ($${''})`}</option>)}
 								</select>
-								<button onClick={() => moveToPlan && act('move_plan', { plan_id: moveToPlan })} disabled={!moveToPlan || busy !== null} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+								<button onClick={() => moveToPlan && act('move_plan', { plan_id: moveToPlan })} disabled={!moveToPlan || busy !== null} className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 									{busy === 'move_plan' ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
 									Move
 								</button>
@@ -248,7 +248,7 @@ function UserManagerModal({ user, plans, onClose, onChanged }: {
 									<input
 										type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
 										placeholder="New password (min 8)"
-										className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+										className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500"
 									/>
 									<button onClick={() => newPassword.length >= 8 && act('reset_password', { new_password: newPassword })} disabled={newPassword.length < 8 || busy !== null} className="shrink-0 rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm hover:border-mint hover:text-[var(--nx-mint)] disabled:opacity-40">
 										{busy === 'reset_password' ? '…' : 'Set password'}
@@ -258,7 +258,7 @@ function UserManagerModal({ user, plans, onClose, onChanged }: {
 									<input
 										type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
 										placeholder="Change email"
-										className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+										className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 									/>
 									<button onClick={() => newEmail !== user.email && act('change_email', { new_email: newEmail })} disabled={newEmail === user.email || busy !== null} className="shrink-0 rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm hover:border-mint hover:text-[var(--nx-mint)] disabled:opacity-40">
 										{busy === 'change_email' ? '…' : 'Update'}

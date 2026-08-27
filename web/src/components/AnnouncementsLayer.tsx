@@ -96,7 +96,7 @@ export function AnnouncementsLayer() {
 			{marquees.map((m) => (
 				<div
 					key={m.id}
-					className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-indigo-600 to-violet-600 text-white"
+					className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-cyan-600 to-violet-600 text-white"
 				>
 					<div className="marquee-track flex min-w-max items-center gap-16 px-4 text-xs font-medium">
 						{Array.from({ length: 6 }).map((_, i) => (
@@ -157,7 +157,7 @@ export function AnnouncementsLayer() {
 									href={popup.cta_url}
 									target="_blank"
 									rel="noreferrer"
-									className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+									className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500"
 								>
 									{popup.cta_label[locale] ?? popup.cta_label.en ?? 'Open'}
 									<ArrowUpRight size={14} />

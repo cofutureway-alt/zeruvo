@@ -84,7 +84,7 @@ export default function Signup() {
 												autoComplete="email"
 												value={email}
 												onChange={(e) => setEmail(e.target.value)}
-												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-indigo-500"
+												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-500"
 												placeholder="you@example.com"
 											/>
 										</div>
@@ -104,7 +104,7 @@ export default function Signup() {
 												autoComplete="new-password"
 												value={password}
 												onChange={(e) => setPassword(e.target.value)}
-												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-indigo-500"
+												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-500"
 											/>
 											<button type="button" tabIndex={-1} onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--nx-muted)] transition-colors hover:text-[var(--nx-text)]">
 												{showPw ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -126,7 +126,7 @@ export default function Signup() {
 												autoComplete="new-password"
 												value={confirm}
 												onChange={(e) => setConfirm(e.target.value)}
-												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-indigo-500"
+												className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2.5 pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-500"
 											/>
 											<button type="button" tabIndex={-1} onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--nx-muted)] transition-colors hover:text-[var(--nx-text)]">
 												{showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -157,7 +157,7 @@ export default function Signup() {
 										disabled={busy}
 										whileHover={anim ? { scale: 1.01 } : undefined}
 										whileTap={anim ? { scale: 0.98 } : undefined}
-										className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-medium text-white shadow-[0_0_24px_rgba(139,124,255,0.2)] transition-colors hover:bg-indigo-500 disabled:opacity-50"
+										className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-3 text-sm font-medium text-white shadow-[0_0_24px_rgba(6,182,212,0.2)] transition-colors hover:bg-cyan-500 disabled:opacity-50"
 									>
 										{busy ? <Loader2 size={16} className="animate-spin" /> : <>{t('auth.signupAction')} <ArrowRight size={15} /></>}
 									</motion.button>
@@ -166,7 +166,7 @@ export default function Signup() {
 
 							<motion.p {...field(reduced, 5)} className="mt-5 text-center text-xs text-[var(--nx-muted)]">
 								{t('auth.haveAccount')}{' '}
-								<Link to="/login" className="font-medium text-indigo-400 transition-colors hover:text-indigo-300">
+								<Link to="/login" className="font-medium text-cyan-400 transition-colors hover:text-cyan-300">
 									{t('nav.login')}
 								</Link>
 							</motion.p>

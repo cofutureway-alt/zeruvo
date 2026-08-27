@@ -87,7 +87,7 @@ export function DashboardShell({
 				}`}
 			>
 				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
-					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
+					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-sm font-bold text-white">
 						N
 					</div>
 					{!collapsed && (
@@ -108,12 +108,12 @@ export function DashboardShell({
 							title={collapsed ? String(label ?? t(`dashboard.${labelKey}`)) : undefined}
 							className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
 								isActive(to)
-									? 'bg-indigo-500/10 font-medium text-indigo-400'
+									? 'bg-cyan-500/10 font-medium text-cyan-400'
 									: 'text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100'
 							}`}
 						>
 							{isActive(to) && (
-								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-indigo-400" />
+								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-cyan-400" />
 							)}
 							<Icon size={17} className="shrink-0" />
 							{!collapsed && <span className="truncate">{label ?? t(`dashboard.${labelKey}`)}</span>}

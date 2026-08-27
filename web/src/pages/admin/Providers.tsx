@@ -83,7 +83,7 @@ export default function Providers() {
 					</div>
 					<button
 						onClick={() => setWizardOpen(true)}
-						className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,124,255,0.25)] transition hover:bg-indigo-500"
+						className="flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(6,182,212,0.25)] transition hover:bg-cyan-500"
 					>
 						<Plus size={16} /> Add provider
 					</button>
@@ -167,7 +167,7 @@ function ActionButton(props: { onClick: () => void; Icon: typeof KeyRound; label
 	return (
 		<button
 			onClick={props.onClick}
-			className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--nx-border)] py-2 text-xs font-medium text-zinc-200 transition hover:border-indigo-500/60 hover:text-indigo-300"
+			className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--nx-border)] py-2 text-xs font-medium text-zinc-200 transition hover:border-cyan-500/60 hover:text-cyan-300"
 		>
 			<props.Icon size={13} className={props.spin ? 'animate-spin' : ''} />
 			{props.label}
@@ -214,7 +214,7 @@ function CreateProviderModal({ onClose, onCreated }: { onClose: () => void; onCr
 						<button
 							key={k}
 							onClick={() => setKind(k)}
-							className={`rounded-xl border px-4 py-3 text-sm capitalize transition ${kind === k ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300' : 'border-[var(--nx-border)] text-[var(--nx-muted)] hover:border-zinc-600'}`}
+							className={`rounded-xl border px-4 py-3 text-sm capitalize transition ${kind === k ? 'border-cyan-500 bg-cyan-500/10 text-cyan-300' : 'border-[var(--nx-border)] text-[var(--nx-muted)] hover:border-zinc-600'}`}
 						>
 							{k === 'openrouter' ? 'OpenRouter' : 'Custom (OpenAI-compatible)'}
 						</button>
@@ -224,7 +224,7 @@ function CreateProviderModal({ onClose, onCreated }: { onClose: () => void; onCr
 				{kind === 'custom' && <Field label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="https://api.example.com/v1" mono />}
 				<Field label="First API key (optional — add more later)" value={key} onChange={setKey} placeholder="sk-…" password />
 				{error && <p className="text-sm text-red-400">{error}</p>}
-				<button onClick={submit} disabled={busy} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">
+				<button onClick={submit} disabled={busy} className="w-full rounded-xl bg-cyan-600 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-40">
 					{busy ? 'Creating…' : 'Create provider'}
 				</button>
 			</div>
@@ -259,12 +259,12 @@ function EditProviderModal({ provider, onClose, onSaved }: { provider: ProviderR
 				<Field label="Base URL" value={baseUrl} onChange={setBaseUrl} mono />
 				<label className="block">
 					<span className="text-sm text-[var(--nx-muted)]">Status</span>
-					<select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-indigo-500">
+					<select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none focus:border-cyan-500">
 						<option value="active">Active</option>
 						<option value="disabled">Disabled</option>
 					</select>
 				</label>
-				<button onClick={save} disabled={busy} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">
+				<button onClick={save} disabled={busy} className="w-full rounded-xl bg-cyan-600 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-40">
 					{busy ? 'Saving…' : 'Save changes'}
 				</button>
 			</div>
@@ -327,14 +327,14 @@ function KeysManagerModal({ provider, onClose }: { provider: ProviderRow; onClos
 					<input
 						type="password" value={newKey} onChange={(e) => setNewKey(e.target.value)}
 						placeholder="Paste API key…"
-						className="min-w-48 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+						className="min-w-48 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500"
 					/>
 					<input
 						type="number" min={0.5} step="any" value={weight} onChange={(e) => setWeight(e.target.value)}
 						placeholder="weight" title="Selection weight for load balancing"
-						className="w-20 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500"
+						className="w-20 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500"
 					/>
-					<button onClick={addKey} disabled={busy || !newKey.trim()} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+					<button onClick={addKey} disabled={busy || !newKey.trim()} className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 						<Plus size={14} /> Add
 					</button>
 				</div>
@@ -414,7 +414,7 @@ function Field(props: { label: string; value: string; onChange: (v: string) => v
 				value={props.value}
 				onChange={(e) => props.onChange(e.target.value)}
 				placeholder={props.placeholder}
-				className={`mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500 ${props.mono || props.password ? 'font-mono' : ''}`}
+				className={`mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500 ${props.mono || props.password ? 'font-mono' : ''}`}
 			/>
 		</label>
 	);

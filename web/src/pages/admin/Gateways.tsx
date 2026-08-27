@@ -104,8 +104,8 @@ export default function Gateways() {
 
 				<section className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-6">
 					<div className="flex items-center gap-3">
-						<div className="grid size-10 place-items-center rounded-xl bg-indigo-500/10">
-							<Wallet size={20} className="text-indigo-400" />
+						<div className="grid size-10 place-items-center rounded-xl bg-cyan-500/10">
+							<Wallet size={20} className="text-cyan-400" />
 						</div>
 						<div className="flex-1">
 							<p className="font-medium">Kashier</p>
@@ -119,16 +119,16 @@ export default function Gateways() {
 					<div className="mt-5 space-y-4">
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Merchant ID (MID)</span>
-							<input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} placeholder="MID-12345-6789" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500" />
+							<input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} placeholder="MID-12345-6789" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500" />
 						</label>
 						<div className="grid gap-4 sm:grid-cols-2">
 							<label className="block">
 								<span className="text-sm text-[var(--nx-muted)]">API Key {row?.api_key_last4 && <span className="text-emerald-400">(••••{row.api_key_last4})</span>}</span>
-								<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={row ? 'Leave blank to keep current' : 'From Dashboard → Integrations'} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500 placeholder:text-xs" />
+								<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={row ? 'Leave blank to keep current' : 'From Dashboard → Integrations'} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500 placeholder:text-xs" />
 							</label>
 							<label className="block">
 								<span className="text-sm text-[var(--nx-muted)]">Secret Key</span>
-								<input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} placeholder={row ? 'Leave blank to keep current' : 'From Dashboard → Integrations'} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500 placeholder:text-xs" />
+								<input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} placeholder={row ? 'Leave blank to keep current' : 'From Dashboard → Integrations'} className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500 placeholder:text-xs" />
 							</label>
 						</div>
 
@@ -152,7 +152,7 @@ export default function Gateways() {
 								step={0.5}
 								value={egpRate}
 								onChange={(e) => setEgpRate(Number(e.target.value) || 50)}
-								className="mt-1 w-32 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+								className="mt-1 w-32 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500"
 							/>
 						</label>
 
@@ -170,7 +170,7 @@ export default function Gateways() {
 							</p>
 						)}
 
-						<button onClick={save} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+						<button onClick={save} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 							{saving && <Loader2 size={14} className="animate-spin" />}
 							Save configuration
 						</button>

@@ -38,7 +38,7 @@ export function GuestRoute({ children }: { children: ReactNode }) {
 function FullscreenSpinner() {
 	return (
 		<div className="grid min-h-dvh place-items-center bg-[var(--nx-bg)]">
-			<div className="size-8 animate-spin rounded-full border-2 border-[var(--nx-border)] border-t-indigo-500" />
+			<div className="size-8 animate-spin rounded-full border-2 border-[var(--nx-border)] border-t-cyan-500" />
 		</div>
 	);
 }

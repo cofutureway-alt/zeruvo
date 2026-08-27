@@ -43,7 +43,7 @@ export default function ModelDetail() {
 		return (
 			<main className="mx-auto max-w-3xl px-6 py-24 text-center">
 				<h1 className="text-xl font-semibold">Model not found</h1>
-				<Link to="/models" className="mt-4 inline-block text-sm text-indigo-400">← All models</Link>
+				<Link to="/models" className="mt-4 inline-block text-sm text-cyan-400">← All models</Link>
 			</main>
 		);
 	}
@@ -52,7 +52,7 @@ export default function ModelDetail() {
 
 	return (
 		<main className="mx-auto max-w-3xl px-6 py-12">
-			<Link to="/models" className="text-xs text-[var(--nx-muted)] hover:text-indigo-300">
+			<Link to="/models" className="text-xs text-[var(--nx-muted)] hover:text-cyan-300">
 				← All models
 			</Link>
 
@@ -61,7 +61,7 @@ export default function ModelDetail() {
 					<h1 className="text-2xl font-semibold tracking-tight">{model.display_name}</h1>
 					<p className="mt-1 font-mono text-xs text-[var(--nx-muted)]">{model.upstream_model_id}</p>
 				</div>
-				<span className="shrink-0 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-sm font-semibold tabular-nums text-indigo-300">
+				<span className="shrink-0 rounded-lg bg-cyan-500/10 px-3 py-1.5 text-sm font-semibold tabular-nums text-cyan-300">
 					×{mult}
 				</span>
 			</header>
@@ -93,7 +93,7 @@ export default function ModelDetail() {
 
 			<Link
 				to="/signup"
-				className="mt-8 inline-flex rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-500"
+				className="mt-8 inline-flex rounded-xl bg-cyan-600 px-6 py-3 text-sm font-semibold text-white hover:bg-cyan-500"
 			>
 				Start using this model free
 			</Link>

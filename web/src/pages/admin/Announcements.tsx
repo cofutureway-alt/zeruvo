@@ -123,7 +123,7 @@ function CreateInline({ onDone, onSaved }: { onDone: () => void; onSaved: () => 
 	}
 
 	return (
-		<div className="space-y-3 rounded-xl border border-indigo-500/40 bg-[var(--nx-surface)] p-5">
+		<div className="space-y-3 rounded-xl border border-cyan-500/40 bg-[var(--nx-surface)] p-5">
 			<div className="flex gap-2">
 				<select value={type} onChange={(e) => setType(e.target.value as typeof type)} className="rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none">
 					<option value="popup">Popup</option>
@@ -134,14 +134,14 @@ function CreateInline({ onDone, onSaved }: { onDone: () => void; onSaved: () => 
 					<option value="anonymous">Anonymous only</option>
 					<option value="logged_in">Logged-in users</option>
 				</select>
-				<input value={routes} onChange={(e) => setRoutes(e.target.value)} placeholder="routes (* for all)" className="w-40 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+				<input value={routes} onChange={(e) => setRoutes(e.target.value)} placeholder="routes (* for all)" className="w-40 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
 			</div>
-			<input value={textEn} onChange={(e) => setTextEn(e.target.value)} placeholder="Text (English) — required" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
-			<input value={textAr} onChange={(e) => setTextAr(e.target.value)} placeholder="النص (عربي)" dir="rtl" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
-			<input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder="CTA URL (optional)" dir="ltr" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+			<input value={textEn} onChange={(e) => setTextEn(e.target.value)} placeholder="Text (English) — required" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+			<input value={textAr} onChange={(e) => setTextAr(e.target.value)} placeholder="النص (عربي)" dir="rtl" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+			<input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder="CTA URL (optional)" dir="ltr" className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
 			<div className="flex justify-end gap-2">
 				<button onClick={onDone} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
-				<button onClick={save} disabled={busy || !textEn.trim()} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">Save</button>
+				<button onClick={save} disabled={busy || !textEn.trim()} className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">Save</button>
 			</div>
 		</div>
 	);

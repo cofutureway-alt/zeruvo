@@ -88,7 +88,7 @@ export default function Models() {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Search models…"
-						className="w-72 rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-indigo-500"
+						className="w-72 rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
 					/>
 				</label>
 				<div className="flex items-center gap-1.5 overflow-x-auto">
@@ -96,7 +96,7 @@ export default function Models() {
 						onClick={() => setCategory('all')}
 						className={`flex shrink-0 items-center rounded-full border px-3 py-1.5 text-xs ${
 							category === 'all'
-								? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+								? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
 								: 'border-[var(--nx-border)] text-[var(--nx-muted)]'
 						}`}
 					>
@@ -108,7 +108,7 @@ export default function Models() {
 							onClick={() => setCategory(c.name)}
 							className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
 								category === c.name
-									? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+									? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
 									: 'border-[var(--nx-border)] text-[var(--nx-muted)]'
 							}`}
 						>
@@ -139,11 +139,11 @@ export default function Models() {
 					<Link
 						key={m.id}
 						to={`/models/${encodeURIComponent(m.slug)}`}
-						className="group rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-4 transition hover:border-indigo-500/50"
+						className="group rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-4 transition hover:border-cyan-500/50"
 					>
 						<div className="flex items-center justify-between gap-2">
-							<h3 className="truncate text-sm font-medium group-hover:text-indigo-300">{m.display_name}</h3>
-							<span className="shrink-0 rounded-md bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-indigo-300">
+							<h3 className="truncate text-sm font-medium group-hover:text-cyan-300">{m.display_name}</h3>
+							<span className="shrink-0 rounded-md bg-cyan-500/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-cyan-300">
 								×{Number(m.usage_multiplier)}
 							</span>
 						</div>

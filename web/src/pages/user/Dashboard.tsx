@@ -88,7 +88,7 @@ export default function Dashboard() {
 					<div className="h-2.5 overflow-hidden rounded-full bg-zinc-800">
 						<div
 							className={`h-full rounded-full transition-all ${
-								pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-indigo-500'
+								pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-cyan-500'
 							}`}
 							style={{ width: `${pct}%` }}
 						/>
@@ -137,7 +137,7 @@ export default function Dashboard() {
 						</div>
 						<a
 							href="/dashboard/plans"
-							className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,124,255,0.25)] hover:bg-indigo-500"
+							className="rounded-xl bg-cyan-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(6,182,212,0.25)] hover:bg-cyan-500"
 						>
 							Browse plans
 						</a>

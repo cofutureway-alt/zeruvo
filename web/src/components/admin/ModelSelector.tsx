@@ -103,7 +103,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 						<p className="text-xs text-[var(--nx-muted)]">Click a model to move it between catalog and live list.</p>
 					</div>
 					<div className="flex items-center gap-2">
-						<button onClick={sync} disabled={syncing} className="flex items-center gap-2 rounded-lg border border-[var(--nx-border)] px-3 py-2 text-sm hover:border-indigo-500/50 disabled:opacity-40">
+						<button onClick={sync} disabled={syncing} className="flex items-center gap-2 rounded-lg border border-[var(--nx-border)] px-3 py-2 text-sm hover:border-cyan-500/50 disabled:opacity-40">
 							<RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
 							Sync
 						</button>
@@ -133,9 +133,9 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 							) : (
 								available.map((m) => (
 									<li key={m.id}>
-										<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-start text-sm hover:bg-indigo-500/5">
+										<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-start text-sm hover:bg-cyan-500/5">
 											<span className="truncate">{m.upstream_model_id}</span>
-											<ArrowRight size={15} className="shrink-0 text-[var(--nx-muted)] group-hover:text-indigo-400" />
+											<ArrowRight size={15} className="shrink-0 text-[var(--nx-muted)] group-hover:text-cyan-400" />
 										</button>
 									</li>
 								))
@@ -143,7 +143,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 						</ul>
 					</section>
 
-					<section className="flex min-h-0 flex-col rounded-xl border border-indigo-500/30">
+					<section className="flex min-h-0 flex-col rounded-xl border border-cyan-500/30">
 						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">
 							Live to users <span className="text-[var(--nx-muted)]">({live.length})</span>
 							<span className="ms-1 text-[11px] text-red-400">multiplier required</span>
@@ -184,7 +184,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 					<p className="text-xs text-[var(--nx-muted)]">Weighted billing: a ×50 model consumes 50 quota units per token.</p>
 					<div className="flex gap-2">
 						<button onClick={props.onClose} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
-						<button onClick={save} disabled={saving} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+						<button onClick={save} disabled={saving} className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 							{saving ? 'Saving…' : `Save ${live.length} model${live.length === 1 ? '' : 's'}`}
 						</button>
 					</div>

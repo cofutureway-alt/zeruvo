@@ -76,18 +76,18 @@ export function ProviderWizard(props: {
 						</div>
 						<label className="block">
 							<span className="text-sm text-[var(--nx-muted)]">Display name</span>
-							<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. OpenRouter" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+							<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. OpenRouter" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
 						</label>
 						{kind === 'custom' && (
 							<label className="block">
 								<span className="text-sm text-[var(--nx-muted)]">Base URL</span>
-								<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+								<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" className="mt-1 w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
 							</label>
 						)}
 						<button
 							disabled={!name.trim() || (kind === 'custom' && !baseUrl.trim())}
 							onClick={() => setStep(2)}
-							className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+							className="w-full rounded-lg bg-cyan-600 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 						>
 							Continue
 						</button>
@@ -106,14 +106,14 @@ export function ProviderWizard(props: {
 									value={k}
 									onChange={(e) => setKeys(keys.map((x, j) => (j === i ? e.target.value : x)))}
 									placeholder={`API key #${i + 1}`}
-									className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+									className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 								/>
 								<button onClick={() => setKeys(keys.filter((_, j) => j !== i))} disabled={keys.length === 1} className="rounded-lg p-2.5 text-[var(--nx-muted)] hover:bg-zinc-800/60 disabled:opacity-30">
 									<Trash2 size={16} />
 								</button>
 							</div>
 						))}
-						<button onClick={() => setKeys([...keys, ''])} className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300">
+						<button onClick={() => setKeys([...keys, ''])} className="flex items-center gap-1.5 text-sm text-cyan-400 hover:text-cyan-300">
 							<Plus size={15} />
 							Add another key
 						</button>
@@ -123,7 +123,7 @@ export function ProviderWizard(props: {
 							<button
 								onClick={submit}
 								disabled={busy || !keys.some((k) => k.trim())}
-								className="flex-1 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+								className="flex-1 rounded-lg bg-cyan-600 py-2.5 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 							>
 								{busy ? 'Saving…' : 'Save & sync models'}
 							</button>
@@ -140,10 +140,10 @@ function KindCard(props: { active: boolean; onClick: () => void; Icon: typeof Se
 		<button
 			onClick={props.onClick}
 			className={`rounded-xl border p-4 text-start transition ${
-				props.active ? 'border-indigo-500 bg-indigo-500/10' : 'border-[var(--nx-border)] hover:border-zinc-600'
+				props.active ? 'border-cyan-500 bg-cyan-500/10' : 'border-[var(--nx-border)] hover:border-zinc-600'
 			}`}
 		>
-			<props.Icon size={20} className={props.active ? 'text-indigo-400' : 'text-[var(--nx-muted)]'} />
+			<props.Icon size={20} className={props.active ? 'text-cyan-400' : 'text-[var(--nx-muted)]'} />
 			<p className="mt-2 text-sm font-medium">{props.title}</p>
 			<p className="mt-0.5 text-xs text-[var(--nx-muted)]">{props.desc}</p>
 		</button>

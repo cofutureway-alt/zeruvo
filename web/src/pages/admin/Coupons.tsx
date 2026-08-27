@@ -60,11 +60,11 @@ export default function Coupons() {
 				</header>
 
 				<div className="flex flex-wrap gap-2">
-					<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="CODE" className="w-36 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm uppercase outline-none focus:border-indigo-500" />
-					<input type="number" min={1} max={100} value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="% off" className="w-24 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500" />
-					<input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} placeholder="valid days" className="w-28 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500" />
-					<input type="number" min={1} value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="max uses" className="w-28 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-indigo-500" />
-					<button onClick={create} disabled={!code.trim()} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+					<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="CODE" className="w-36 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm uppercase outline-none focus:border-cyan-500" />
+					<input type="number" min={1} max={100} value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="% off" className="w-24 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500" />
+					<input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} placeholder="valid days" className="w-28 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500" />
+					<input type="number" min={1} value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="max uses" className="w-28 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm tabular-nums outline-none focus:border-cyan-500" />
+					<button onClick={create} disabled={!code.trim()} className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
 						<Plus size={15} />
 						Create
 					</button>

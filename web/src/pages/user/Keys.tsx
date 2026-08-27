@@ -81,12 +81,12 @@ export default function Keys() {
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder="Key name (e.g. my-app)"
-						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"
+						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 					/>
 					<button
 						onClick={createKey}
 						disabled={busy}
-						className="flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+						className="flex shrink-0 items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 					>
 						<Plus size={15} />
 						Create key
@@ -109,7 +109,7 @@ export default function Keys() {
 									setCopied(true);
 									setTimeout(() => setCopied(false), 1500);
 								}}
-								className="shrink-0 rounded-lg border border-[var(--nx-border)] p-2 hover:text-indigo-300"
+								className="shrink-0 rounded-lg border border-[var(--nx-border)] p-2 hover:text-cyan-300"
 								aria-label="Copy"
 							>
 								{copied ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}

@@ -72,7 +72,7 @@ export default function PlansBrowser() {
 					return (
 						<article
 							key={p.id}
-							className={`relative rounded-xl border bg-[var(--nx-surface)] p-5 ${isCurrent ? 'border-indigo-500' : 'border-[var(--nx-border)]'}`}
+							className={`relative rounded-xl border bg-[var(--nx-surface)] p-5 ${isCurrent ? 'border-cyan-500' : 'border-[var(--nx-border)]'}`}
 						>
 							{p.default_free && (
 								<span className="absolute -top-2.5 end-4 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-400">
@@ -105,8 +105,8 @@ export default function PlansBrowser() {
 								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en, priceUsd: Number(p.price_usd) })}
 								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition ${
 									isCurrent
-										? 'cursor-default border border-indigo-500/50 text-indigo-400'
-										: 'bg-indigo-600 text-white hover:bg-indigo-500'
+										? 'cursor-default border border-cyan-500/50 text-cyan-400'
+										: 'bg-cyan-600 text-white hover:bg-cyan-500'
 								}`}
 							>
 								{isCurrent ? (
@@ -259,12 +259,12 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 									onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
 									onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
 									placeholder="e.g. LAUNCH20"
-									className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+									className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500"
 								/>
 								<button
 									onClick={applyCoupon}
 									disabled={checkingCoupon || !couponCode.trim()}
-									className="flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-500/50 px-4 py-2 text-sm font-medium text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-40"
+									className="flex shrink-0 items-center gap-1.5 rounded-lg border border-cyan-500/50 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-40"
 								>
 									{checkingCoupon ? <Loader2 size={14} className="animate-spin" /> : <Tag size={14} />}
 									Apply
@@ -277,7 +277,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 
 						<button
 							onClick={proceedToPay}
-							className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,124,255,0.25)] transition hover:bg-indigo-500"
+							className="w-full rounded-xl bg-cyan-600 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(6,182,212,0.25)] transition hover:bg-cyan-500"
 						>
 							Continue to payment — {finalEgp.toLocaleString()} EGP
 						</button>
@@ -290,7 +290,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 					<iframe src={iframeUrl} title="Kashier secure checkout" className="min-h-0 flex-1 w-full border-0" allow="payment" />
 				) : (
 					<div className="grid place-items-center py-16">
-						<Loader2 className="animate-spin text-indigo-400" size={28} />
+						<Loader2 className="animate-spin text-cyan-400" size={28} />
 					</div>
 				)}
 			</div>

@@ -14,7 +14,7 @@ export function TimeRangeFilter(props: { value: TimeRange; onChange: (r: TimeRan
 				<button
 					key={r.value}
 					onClick={() => props.onChange(r.value)}
-					className={`px-3 py-1 text-xs transition ${props.value === r.value ? 'bg-indigo-500/10 font-medium text-indigo-400' : 'text-[var(--nx-muted)] hover:text-[var(--nx-text)]'}`}
+					className={`px-3 py-1 text-xs transition ${props.value === r.value ? 'bg-cyan-500/10 font-medium text-cyan-400' : 'text-[var(--nx-muted)] hover:text-[var(--nx-text)]'}`}
 				>
 					{r.label}
 				</button>
