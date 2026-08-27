@@ -30,17 +30,15 @@ async function decrypt(stored: string, dekB64: string): Promise<string> {
 }
 
 Deno.serve(async (req) => {
-// CORS: the SPA calls these functions directly from the browser
 const CORS_HEADERS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
 };
 
-if (req.method === 'OPTIONS') {
-	return new Response('ok', { headers: CORS_HEADERS });
-}
+if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
+if (req.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405, headers: CORS_HEADERS });
 
-	if (req.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405, headers: CORS_HEADERS })
+try {
 	const authHeader = req.headers.get('Authorization') ?? '';
 	const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
 		global: { headers: { Authorization: authHeader } },
@@ -48,7 +46,7 @@ if (req.method === 'OPTIONS') {
 	const { data: { user } } = await supabase.auth.getUser();
 	if (!user) return Response.json({ error: 'unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-	let body: { plan_id?: string };
+	let body: { plan_id?: string; coupon_code?: string };
 	try { body = await req.json(); } catch { return Response.json({ error: 'invalid json' }, { status: 400, headers: CORS_HEADERS }) }
 	if (!body.plan_id) return Response.json({ error: 'plan_id required' }, { status: 400, headers: CORS_HEADERS })
 
@@ -67,9 +65,43 @@ if (req.method === 'OPTIONS') {
 		return Response.json({ error: 'plan is free — no checkout needed' }, { status: 400, headers: CORS_HEADERS })
 	}
 
+	// ---------- coupon validation (server-side source of truth) ----------
+	const couponCode = String(body.coupon_code ?? '').trim().toUpperCase();
+	let discountPct = 0;
+	let appliedCoupon: string | null = null;
+	if (couponCode) {
+		const { data: coupon, error: couponErr } = await admin.from('coupons')
+			.select('*').eq('code', couponCode).eq('active', true).maybeSingle();
+		if (couponErr) {
+			console.error('coupon query error:', JSON.stringify(couponErr));
+			return Response.json({ error: 'coupon lookup failed' }, { status: 500, headers: CORS_HEADERS })
+		}
+		const now = new Date();
+		if (
+			coupon &&
+			new Date(coupon.valid_from) <= now &&
+			new Date(coupon.valid_to) > now &&
+			coupon.times_redeemed < coupon.max_redemptions
+		) {
+			discountPct = Number(coupon.percent_off);
+			appliedCoupon = coupon.code;
+		} else {
+			return Response.json({ error: 'Invalid, expired, or exhausted coupon' }, { status: 400, headers: CORS_HEADERS })
+		}
+	}
+
+	const priceUsd = Number(plan.price_usd);
+	const finalUsd = Math.max(priceUsd * (1 - discountPct / 100), 0.5); // Kashier min charge guard
+
 	const orderId = `nx-${user.id.slice(0, 8)}-${body.plan_id.slice(0, 8)}-${Date.now().toString(36)}`;
-	const amount = Number(plan.price_usd).toFixed(2);
-	const apiKey = await decrypt(gw.encrypted_api_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
+	const amount = finalUsd.toFixed(2);
+	let apiKey: string;
+	try {
+		apiKey = await decrypt(gw.encrypted_api_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
+	} catch {
+		console.error('checkout: failed to decrypt payment gateway key — DEK may have been rotated');
+		return Response.json({ error: 'Payment gateway misconfigured — admin must re-save the Kashier API key' }, { status: 503, headers: CORS_HEADERS })
+	}
 
 	// official Hash.php scheme
 	const path = `/?payment=${gw.merchant_id}.${orderId}.${amount}.EGP`;
@@ -93,18 +125,30 @@ if (req.method === 'OPTIONS') {
 		metaData: encodeURIComponent(JSON.stringify({ userId: user.id, planId: body.plan_id })),
 	});
 
-	await admin.from('payments').insert({
+	const { error: insertErr } = await admin.from('payments').insert({
 		user_id: user.id,
 		amount_egp: amount,
-		amount_usd_display: Number(plan.price_usd),
+		amount_usd_display: finalUsd,
 		method: gw.default_method ?? 'card',
 		gateway_ref: orderId,
 		status: 'pending',
-		meta: { plan_id: body.plan_id, mode: gw.mode },
+		coupon_code: appliedCoupon,
+		meta: { plan_id: body.plan_id, mode: gw.mode, discount_pct: discountPct, list_price_usd: priceUsd },
 	});
+	if (insertErr) {
+		console.error('payment insert error:', JSON.stringify(insertErr));
+		return Response.json({ error: 'failed to create payment record' }, { status: 500, headers: CORS_HEADERS })
+	}
+	// note: coupon_redemptions + times_redeemed increment happen in the
+	// kashier-webhook on SUCCESS — reserving at checkout would burn the
+	// coupon if the payment never completes
 
 	return Response.json({
 		checkout_url: `https://payments.kashier.io/?${q.toString()}`,
 		order_id: orderId,
 	}, { headers: CORS_HEADERS });
+} catch (err) {
+	console.error('checkout unhandled:', err);
+	return Response.json({ error: 'Internal Server Error', detail: String(err?.message ?? err) }, { status: 500, headers: CORS_HEADERS })
+}
 });

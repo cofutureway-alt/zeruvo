@@ -51,15 +51,20 @@ export default function Gateways() {
 
 		// encrypt any newly entered secrets via the admin-crypto edge function
 		const values = [apiKey.trim(), secretKey.trim()].filter(Boolean);
-		let encrypted: string[] = [];
+		let encApiKey: string | undefined;
+		let encSecretKey: string | undefined;
 		if (values.length) {
 			const res = await edgeCall<{ encrypted?: string[] }>('admin-crypto', { values });
-			encrypted = res?.encrypted ?? [];
+			const encrypted = res?.encrypted ?? [];
 			if (!encrypted.length) {
 				setMessage({ ok: false, text: 'Encryption service failed.' });
 				setSaving(false);
 				return;
 			}
+			// map encrypted values back to the correct fields
+			let idx = 0;
+			if (apiKey.trim()) encApiKey = encrypted[idx++];
+			if (secretKey.trim()) encSecretKey = encrypted[idx++];
 		}
 
 		const payload: Record<string, unknown> = {
@@ -67,10 +72,9 @@ export default function Gateways() {
 			enabled,
 			mode,
 			merchant_id: merchantId.trim(),
-			encrypted_secret_key: row?.encrypted_api_key ? undefined : undefined, // keep existing unless replaced
 		};
-		if (apiKey.trim()) payload.encrypted_api_key = encrypted[0];
-		if (secretKey.trim()) payload.encrypted_secret_key = apiKey.trim() ? encrypted[1] : encrypted[0];
+		if (encApiKey) payload.encrypted_api_key = encApiKey;
+		if (encSecretKey) payload.encrypted_secret_key = encSecretKey;
 
 		const { error } = await supabase
 			.from('payment_gateways')
