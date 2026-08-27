@@ -11,6 +11,7 @@ interface GatewayRow {
 	merchant_id: string | null;
 	api_key_last4: string | null;
 	encrypted_api_key: boolean;
+	egp_rate: number;
 }
 
 /** Admin payment-gateway settings (SPA port) — secrets encrypted via edge. */
@@ -22,6 +23,7 @@ export default function Gateways() {
 	const [secretKey, setSecretKey] = useState('');
 	const [mode, setMode] = useState<'test' | 'live'>('test');
 	const [enabled, setEnabled] = useState(false);
+	const [egpRate, setEgpRate] = useState(50);
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -34,6 +36,7 @@ export default function Gateways() {
 			setMerchantId((data as GatewayRow).merchant_id ?? '');
 			setMode((data as GatewayRow).mode);
 			setEnabled((data as GatewayRow).enabled);
+			setEgpRate((data as GatewayRow).egp_rate ?? 50);
 		}
 	}, []);
 
@@ -72,6 +75,7 @@ export default function Gateways() {
 			enabled,
 			mode,
 			merchant_id: merchantId.trim(),
+			egp_rate: Number(egpRate) || 50,
 		};
 		if (encApiKey) payload.encrypted_api_key = encApiKey;
 		if (encSecretKey) payload.encrypted_secret_key = encSecretKey;
@@ -138,6 +142,19 @@ export default function Gateways() {
 								Enable gateway
 							</label>
 						</div>
+
+						<label className="block">
+							<span className="text-sm text-[var(--nx-muted)]">USD → EGP exchange rate</span>
+							<p className="mb-1 text-xs text-[var(--nx-muted)]">Prices in USD are converted to EGP at this rate before sending to Kashier.</p>
+							<input
+								type="number"
+								min={1}
+								step={0.5}
+								value={egpRate}
+								onChange={(e) => setEgpRate(Number(e.target.value) || 50)}
+								className="mt-1 w-32 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-indigo-500"
+							/>
+						</label>
 
 						{mode === 'live' && (
 							<p className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-4 py-2.5 text-xs text-amber-400">

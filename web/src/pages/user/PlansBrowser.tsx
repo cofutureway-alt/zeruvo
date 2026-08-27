@@ -30,19 +30,22 @@ export default function PlansBrowser() {
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
 	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string; priceUsd: number } | null>(null);
+	const [egpRate, setEgpRate] = useState(50);
 
 	useEffect(() => {
 		void (async () => {
-			const [{ data: plansData }, { data: modelsData }, { data: pmData }] = await Promise.all([
+			const [{ data: plansData }, { data: modelsData }, { data: pmData }, { data: gwData }] = await Promise.all([
 				supabase.from('plans').select('*').eq('active', true).order('price_usd'),
 				supabase.from('models').select('id,upstream_model_id').eq('enabled_for_users', true),
 				supabase.from('plan_models').select('plan_id,model_id'),
+				supabase.from('payment_gateways').select('egp_rate').eq('gateway', 'kashier').maybeSingle(),
 			]);
 			const grouped: Record<string, string[]> = {};
 			for (const pm of pmData ?? []) (grouped[pm.plan_id] ??= []).push(pm.model_id);
 			setPlans(plansData ?? []);
 			setModels(modelsData ?? []);
 			setPlanModels(grouped);
+			if (gwData?.egp_rate) setEgpRate(Number(gwData.egp_rate));
 
 			const { data: { user } } = await supabase.auth.getUser();
 			if (user) {
@@ -128,6 +131,7 @@ export default function PlansBrowser() {
 					planId={checkoutFor.id}
 					planName={checkoutFor.name}
 					priceUsd={checkoutFor.priceUsd}
+					egpRate={egpRate}
 					onClose={() => {
 						setCheckoutFor(null);
 						window.location.reload();
@@ -140,7 +144,7 @@ export default function PlansBrowser() {
 
 type Step = 'coupon' | 'paying';
 
-function CheckoutModal(props: { planId: string; planName: string; priceUsd: number; onClose: () => void }) {
+function CheckoutModal(props: { planId: string; planName: string; priceUsd: number; egpRate: number; onClose: () => void }) {
 	const [step, setStep] = useState<Step>('coupon');
 	const [couponCode, setCouponCode] = useState('');
 	const [discountPct, setDiscountPct] = useState(0);
@@ -153,6 +157,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 
 	const discountUsd = (props.priceUsd * discountPct) / 100;
 	const finalUsd = Math.max(props.priceUsd - discountUsd, 0);
+	const finalEgp = Math.round(finalUsd * props.egpRate * 100) / 100;
 
 	function applyCoupon() {
 		const code = couponCode.trim().toUpperCase();
@@ -216,13 +221,13 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 
 	return (
 		<div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
-			<div className="flex h-auto max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
+			<div className="flex h-auto max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
 				<header className="flex items-center justify-between border-b border-[var(--nx-border)] px-5 py-3.5">
 					<div>
 						<p className="text-sm font-medium">Subscribe — {props.planName}</p>
 						<p className="flex items-center gap-1 text-[11px] text-[var(--nx-muted)]">
 							<ShieldCheck size={11} />
-							Secured by Kashier · paid in EGP
+							Secured by Kashier · 1 USD ≈ {props.egpRate} EGP
 						</p>
 					</div>
 					<button onClick={props.onClose} className="rounded-lg p-1.5 text-[var(--nx-muted)] hover:bg-zinc-800/60">
@@ -234,12 +239,12 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 					<div className="space-y-5 p-6">
 						{/* summary */}
 						<div className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-bg-raised)] p-4 text-sm">
-							<Row label="Plan price" value={`$${props.priceUsd.toFixed(2)}`} />
+							<Row label="Plan price" value={`$${props.priceUsd.toFixed(2)} → ${Math.round(props.priceUsd * props.egpRate).toLocaleString()} EGP`} />
 							{discountPct > 0 && (
 								<Row label={`Discount (${discountPct}%)`} value={`−$${discountUsd.toFixed(2)}`} accent />
 							)}
 							<div className="my-2 border-t border-[var(--nx-border)]" />
-							<Row label="Total" value={`$${finalUsd.toFixed(2)}`} bold />
+							<Row label="You pay" value={`${finalEgp.toLocaleString()} EGP`} bold />
 						</div>
 
 						{/* coupon input */}
@@ -274,7 +279,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 							onClick={proceedToPay}
 							className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,124,255,0.25)] transition hover:bg-indigo-500"
 						>
-							Continue to payment — ${finalUsd.toFixed(2)}
+							Continue to payment — {finalEgp.toLocaleString()} EGP
 						</button>
 					</div>
 				) : payError ? (

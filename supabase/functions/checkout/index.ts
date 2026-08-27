@@ -93,8 +93,12 @@ try {
 	const priceUsd = Number(plan.price_usd);
 	const finalUsd = Math.max(priceUsd * (1 - discountPct / 100), 0.5); // Kashier min charge guard
 
+	// convert USD → EGP using the gateway-configured exchange rate
+	const egpRate = Number(gw.egp_rate ?? 50);
+	const finalEgp = Math.round(finalUsd * egpRate * 100) / 100; // 2 decimal places
+
 	const orderId = `nx-${user.id.slice(0, 8)}-${body.plan_id.slice(0, 8)}-${Date.now().toString(36)}`;
-	const amount = finalUsd.toFixed(2);
+	const amount = finalEgp.toFixed(2);
 	let apiKey: string;
 	try {
 		apiKey = await decrypt(gw.encrypted_api_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
@@ -133,7 +137,7 @@ try {
 		gateway_ref: orderId,
 		status: 'pending',
 		coupon_code: appliedCoupon,
-		meta: { plan_id: body.plan_id, mode: gw.mode, discount_pct: discountPct, list_price_usd: priceUsd },
+		meta: { plan_id: body.plan_id, mode: gw.mode, discount_pct: discountPct, list_price_usd: priceUsd, egp_rate: egpRate },
 	});
 	if (insertErr) {
 		console.error('payment insert error:', JSON.stringify(insertErr));
