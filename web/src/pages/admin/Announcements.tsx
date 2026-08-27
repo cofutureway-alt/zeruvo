@@ -69,8 +69,8 @@ export default function Announcements() {
 				<div className="space-y-3">
 					{items.map((a) => (
 						<article key={a.id} className="flex items-center gap-4 rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-4">
-							<div className={`grid size-9 shrink-0 place-items-center rounded-lg ${a.type === 'marquee' ? 'bg-sky-500/10' : 'bg-violet-500/10'}`}>
-								<Megaphone size={17} className={a.type === 'marquee' ? 'text-sky-400' : 'text-violet-400'} />
+							<div className={`grid size-9 shrink-0 place-items-center rounded-lg ${a.type === 'marquee' ? 'bg-sky-500/10' : 'bg-teal-500/10'}`}>
+								<Megaphone size={17} className={a.type === 'marquee' ? 'text-sky-400' : 'text-teal-400'} />
 							</div>
 							<div className="min-w-0 flex-1">
 								<div className="flex flex-wrap items-center gap-2">

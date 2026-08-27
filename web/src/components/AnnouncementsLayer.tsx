@@ -96,7 +96,7 @@ export function AnnouncementsLayer() {
 			{marquees.map((m) => (
 				<div
 					key={m.id}
-					className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-cyan-600 to-violet-600 text-white"
+					className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-cyan-600 to-teal-500 text-white"
 				>
 					<div className="marquee-track flex min-w-max items-center gap-16 px-4 text-xs font-medium">
 						{Array.from({ length: 6 }).map((_, i) => (

@@ -1,10 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SplitText, CountUp, SpotlightCard, Reveal, SignalDot } from '../../components/fx';
-
-const HeroScene = lazy(() => import('../../hero/HeroScene'));
 
 const copy = {
 	en: {
@@ -45,66 +42,51 @@ export default function Home() {
 	const { i18n, t } = useTranslation();
 	const lng = (i18n.language in copy ? i18n.language : 'en') as keyof typeof copy;
 	const c = copy[lng];
-	const [show3d, setShow3d] = useState(false);
-
-	useEffect(() => {
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-		const id = setTimeout(() => setShow3d(true), 350);
-		return () => clearTimeout(id);
-	}, []);
 
 	return (
 		<main>
 			{/* ================= HERO ================= */}
-			<section className="nx-grid-bg relative overflow-hidden">
-				<div className="mx-auto grid max-w-6xl items-center gap-8 px-6 pb-28 pt-16 md:min-h-[88vh] md:grid-cols-[1.05fr_0.95fr] md:pt-20">
-					<div>
-						<p className="inline-flex items-center gap-2.5 rounded-full border border-[var(--nx-border)] bg-[var(--nx-bg-raised)] px-4 py-1.5 font-data text-[11px] tracking-wide text-[var(--nx-muted)]">
-							<SignalDot />
-							{c.badge}
-						</p>
+			<section className="relative overflow-hidden">
+				{/* grid lives on its own layer so its bottom mask never fades the copy */}
+				<div className="nx-grid-bg pointer-events-none absolute inset-0" aria-hidden="true" />
+				<div className="relative mx-auto max-w-3xl px-6 pb-28 pt-20 text-center md:pt-28">
+					<p className="inline-flex items-center gap-2.5 rounded-full border border-[var(--nx-border)] bg-[var(--nx-bg-raised)] px-4 py-1.5 font-data text-[11px] tracking-wide text-[var(--nx-muted)]">
+						<SignalDot />
+						{c.badge}
+					</p>
 
-						<h1 className="font-display mt-7 text-[2.6rem] font-bold leading-[1.04] md:text-6xl">
-							<SplitText text={c.title} />
-							<br />
-							<span className="shiny-text">
-								<SplitText text={c.accent} delay={260} />
-							</span>
-						</h1>
+					<h1 className="font-display mt-7 text-[2.6rem] font-bold leading-[1.04] md:text-6xl">
+						<SplitText text={c.title} />
+						<br />
+						<span className="shiny-text">
+							<SplitText text={c.accent} delay={260} />
+						</span>
+					</h1>
 
-						<p className="mt-6 max-w-lg leading-relaxed text-[var(--nx-muted)]">{c.sub}</p>
+					<p className="mx-auto mt-6 max-w-xl leading-relaxed text-[var(--nx-muted)]">{c.sub}</p>
 
-						<div className="mt-9 flex flex-wrap items-center gap-4">
-							<Link
-								to="/signup"
-								className="group flex items-center gap-2 rounded-xl bg-[var(--nx-accent)] px-7 py-3.5 text-sm font-semibold text-[#08080f] shadow-[0_0_32px_rgba(139,124,255,0.35)] transition hover:bg-[var(--nx-accent-strong)] hover:shadow-[0_0_44px_rgba(139,124,255,0.5)]"
-							>
-								{c.cta}
-								<ArrowRight size={16} className="transition-transform group-hover:translate-x-1 rtl:rotate-180 rtl:group-hover:-translate-x-1" />
-							</Link>
-							<Link
-								to="/models"
-								className="flex items-center gap-1.5 rounded-xl border border-[var(--nx-border-bright)] px-6 py-3.5 text-sm font-semibold text-zinc-200 transition hover:border-[var(--nx-accent)]/60 hover:text-white"
-							>
-								{c.secondary}
-								<ArrowUpRight size={15} className="opacity-60" />
-							</Link>
-						</div>
+					<div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+						<Link
+							to="/signup"
+							className="group flex items-center gap-2 rounded-xl bg-[var(--nx-accent)] px-7 py-3.5 text-sm font-semibold text-[#04202a] shadow-[0_0_32px_rgba(6,182,212,0.35)] transition hover:bg-[var(--nx-accent-strong)] hover:shadow-[0_0_44px_rgba(6,182,212,0.5)]"
+						>
+							{c.cta}
+							<ArrowRight size={16} className="transition-transform group-hover:translate-x-1 rtl:rotate-180 rtl:group-hover:-translate-x-1" />
+						</Link>
+						<Link
+							to="/models"
+							className="flex items-center gap-1.5 rounded-xl border border-[var(--nx-border-bright)] px-6 py-3.5 text-sm font-semibold text-zinc-200 transition hover:border-[var(--nx-accent)]/60 hover:text-white"
+						>
+							{c.secondary}
+							<ArrowUpRight size={15} className="opacity-60" />
+						</Link>
 					</div>
 
-					{/* signature: routing core + floating model badges */}
-					<div className="relative mx-auto aspect-square w-full max-w-[30rem]">
-						<div className="absolute inset-[12%] rounded-full bg-[radial-gradient(circle_at_38%_34%,rgba(139,124,255,0.42),rgba(139,124,255,0.08)_52%,transparent_72%)] blur-2xl" />
-						{show3d && (
-							<div className="absolute inset-0">
-								<Suspense fallback={<div className="size-full" />}>
-									<HeroScene />
-								</Suspense>
-							</div>
-						)}
-						<HeroBadge className="left-[2%] top-[16%]" label="claude-opus" ms={214} delay="0.9s" />
-						<HeroBadge className="right-[0%] top-[38%]" label="gpt-5.6" ms={187} delay="1.25s" />
-						<HeroBadge className="bottom-[20%] left-[10%]" label="gemini-flash" ms={142} delay="1.6s" />
+					{/* live routing chips — replaces the old 3D core */}
+					<div className="mt-14 flex flex-wrap items-center justify-center gap-3">
+						<HeroBadge label="claude-opus" ms={214} delay="0.9s" />
+						<HeroBadge label="gpt-5.6" ms={187} delay="1.25s" />
+						<HeroBadge label="gemini-flash" ms={142} delay="1.6s" />
 					</div>
 				</div>
 			</section>
@@ -172,10 +154,10 @@ function Stat(props: { value: number; suffix: string; label: string }) {
 	);
 }
 
-function HeroBadge(props: { className: string; label: string; ms: number; delay: string }) {
+function HeroBadge(props: { label: string; ms: number; delay: string }) {
 	return (
 		<div
-			className={`absolute flex items-center gap-2 rounded-full border border-[var(--nx-border-bright)] bg-[var(--nx-surface)]/90 px-3 py-1.5 backdrop-blur-sm ${props.className}`}
+			className="flex items-center gap-2 rounded-full border border-[var(--nx-border-bright)] bg-[var(--nx-surface)]/90 px-3 py-1.5 backdrop-blur-sm"
 			style={{ animation: `badge-float 6s ease-in-out ${props.delay} infinite` }}
 		>
 			<span className="font-data text-[11px] text-zinc-200">{props.label}</span>
