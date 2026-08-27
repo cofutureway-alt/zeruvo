@@ -28,6 +28,7 @@ import Payments from './pages/admin/Payments';
 import Coupons from './pages/admin/Coupons';
 import Announcements from './pages/admin/Announcements';
 import Gateways from './pages/admin/Gateways';
+import NotFound from './pages/NotFound';
 
 function Root() {
 	// apply persisted locale on boot
@@ -194,7 +195,7 @@ function App() {
 						}
 					/>
 				</Route>
-				<Route path="*" element={<Navigate to="/" replace />} />
+				<Route path="*" element={<NotFound />} />
 			</Routes>
 			</AuthProvider>
 		</BrowserRouter>

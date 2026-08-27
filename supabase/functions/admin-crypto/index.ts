@@ -27,19 +27,26 @@ async function encrypt(plaintext: string, dekB64: string): Promise<string> {
 	return b64encode(merged);
 }
 
-Deno.serve(async (req) => {
 // CORS: the SPA calls these functions directly from the browser
 const CORS_HEADERS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
 };
 
-if (req.method === 'OPTIONS') {
-	return new Response('ok', { headers: CORS_HEADERS });
+function json(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+	});
 }
 
+Deno.serve(async (req) => {
+	if (req.method === 'OPTIONS') {
+		return new Response('ok', { headers: CORS_HEADERS });
+	}
+
 	if (req.method !== 'POST') {
-		return new Response(JSON.stringify({ error: 'method not allowed' }), { status: 405 });
+		return json({ error: 'method not allowed' }, 405);
 	}
 
 	const authHeader = req.headers.get('Authorization') ?? '';
@@ -50,31 +57,31 @@ if (req.method === 'OPTIONS') {
 	);
 
 	const { data: { user } } = await supabase.auth.getUser();
-	if (!user) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+	if (!user) return json({ error: 'unauthorized' }, 401);
 
 	// role check via service client
 	const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 	const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single();
 	if (profile?.role !== 'admin') {
-		return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 });
+		return json({ error: 'forbidden' }, 403);
 	}
 
 	let body: { values?: string[] };
 	try {
 		body = await req.json();
 	} catch {
-		return new Response(JSON.stringify({ error: 'invalid json' }), { status: 400 });
+		return json({ error: 'invalid json' }, 400);
 	}
 	if (!Array.isArray(body.values)) {
-		return new Response(JSON.stringify({ error: 'values[] required' }), { status: 400 });
+		return json({ error: 'values[] required' }, 400);
 	}
 
 	const dek = Deno.env.get('NEXOR_ENCRYPTION_KEY');
-	if (!dek) return new Response(JSON.stringify({ error: 'DEK not configured' }), { status: 500 });
+	if (!dek) return json({ error: 'DEK not configured' }, 500);
 
 	const encrypted: string[] = [];
 	for (const v of body.values.slice(0, 20)) {
 		encrypted.push(await encrypt(String(v), dek));
 	}
-	return new Response(JSON.stringify({ encrypted }), { headers: { 'Content-Type': 'application/json' } });
+	return json({ encrypted });
 });
