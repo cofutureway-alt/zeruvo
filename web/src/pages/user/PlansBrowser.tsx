@@ -221,7 +221,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 
 	return (
 		<div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
-			<div className="flex h-auto max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
+			<div className="flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
 				<header className="flex items-center justify-between border-b border-[var(--nx-border)] px-5 py-3.5">
 					<div>
 						<p className="text-sm font-medium">Subscribe — {props.planName}</p>
@@ -287,7 +287,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 						<p className="text-sm text-red-400">{payError}</p>
 					</div>
 				) : iframeUrl ? (
-					<iframe src={iframeUrl} title="Kashier secure checkout" className="h-[70vh] w-full flex-1 border-0" allow="payment" />
+					<iframe src={iframeUrl} title="Kashier secure checkout" className="min-h-0 flex-1 w-full border-0" allow="payment" />
 				) : (
 					<div className="grid place-items-center py-16">
 						<Loader2 className="animate-spin text-indigo-400" size={28} />
