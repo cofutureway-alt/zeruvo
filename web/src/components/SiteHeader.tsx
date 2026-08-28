@@ -75,11 +75,12 @@ export function SiteHeader() {
 				<PillNav
 					logo={
 						<img
-							src="/logo.png"
+							src="/icon.png"
 							alt=""
-							className="size-10 shrink-0 object-contain"
+							className="size-9 shrink-0 rounded-full object-contain"
 						/>
 					}
+					logoWord="Zeruvo AI"
 					logoAriaLabel="Zeruvo AI — home"
 					items={items}
 					activeHref={activeHref}
