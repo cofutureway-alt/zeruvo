@@ -94,9 +94,7 @@ export function DashboardShell({
 					<Menu size={20} />
 				</button>
 				<div className="flex items-center gap-2">
-					<div className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-xs font-bold text-white">
-						N
-					</div>
+					<img src="/icon.png" alt="" className="size-7 shrink-0 rounded-full object-contain" />
 					<span className="text-sm font-semibold tracking-tight">Zeruvo AI</span>
 				</div>
 			</div>
@@ -122,9 +120,7 @@ export function DashboardShell({
 					>
 						<X size={18} />
 					</button>
-					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-sm font-bold text-white">
-						N
-					</div>
+					<img src="/icon.png" alt="" className="size-8 shrink-0 rounded-full object-contain" />
 					<div className={`min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
 							<p className="truncate text-sm font-semibold tracking-tight">Zeruvo AI</p>
 							<p className="truncate text-[11px] text-[var(--nx-muted)]">

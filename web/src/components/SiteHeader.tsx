@@ -73,7 +73,13 @@ export function SiteHeader() {
 		<header className="nx-grid-header sticky top-0 z-40 py-3">
 			<div className="mx-auto max-w-6xl px-4">
 				<PillNav
-					logo="Z"
+					logo={
+						<img
+							src="/logo.png"
+							alt=""
+							className="size-[34px] shrink-0 rounded-full object-contain"
+						/>
+					}
 					logoWord="Zeruvo AI"
 					logoAriaLabel="Zeruvo AI — home"
 					items={items}
