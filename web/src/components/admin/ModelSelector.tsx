@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { X, RefreshCw, ArrowRight, ArrowLeft, Check, AlertTriangle } from 'lucide-react';
+import { X, RefreshCw, ArrowRight, ArrowLeft, Check, AlertTriangle, Search, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { ProviderRow } from '../../pages/admin/Providers';
 
@@ -19,6 +19,9 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 	const [saving, setSaving] = useState(false);
 	const [multipliers, setMultipliers] = useState<Record<string, string>>({});
 	const [names, setNames] = useState<Record<string, string>>({});
+	const [query, setQuery] = useState('');
+	const [newId, setNewId] = useState('');
+	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
@@ -101,8 +104,28 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 		setModels((ms) => ms.map((m) => (m.id === id ? { ...m, enabled_for_users: !m.enabled_for_users } : m)));
 	}
 
-	const live = models.filter((m) => m.enabled_for_users);
-	const available = models.filter((m) => !m.enabled_for_users);
+	const q = query.toLowerCase();
+	const live = models.filter((m) => m.enabled_for_users && (!q || m.upstream_model_id.toLowerCase().includes(q) || m.display_name?.toLowerCase().includes(q)));
+	const available = models.filter((m) => !m.enabled_for_users && (!q || m.upstream_model_id.toLowerCase().includes(q) || m.display_name?.toLowerCase().includes(q)));
+
+	async function addCustom() {
+		const raw = newId.trim();
+		if (!raw) return;
+		setAdding(true); setError(null);
+		const slug = raw.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, '');
+		const { error: insErr } = await supabase.from('models').insert({
+			provider_id: props.provider.id,
+			upstream_model_id: raw,
+			display_name: raw,
+			slug,
+			enabled_for_users: true,
+			usage_multiplier: 1,
+		});
+		if (insErr) { setError(insErr.message); setAdding(false); return; }
+		setNewId('');
+		setAdding(false);
+		await load();
+	}
 
 	return (
 		<div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
@@ -129,6 +152,35 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 						{error}
 					</div>
 				)}
+
+				{/* search + add custom */}
+				<div className="flex flex-wrap items-center gap-2 px-6 pt-4">
+					<label className="relative block flex-1 min-w-48">
+						<Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--nx-muted)]" />
+						<input
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder="Search models…"
+							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
+						/>
+					</label>
+					<input
+						value={newId}
+						onChange={(e) => setNewId(e.target.value)}
+						onKeyDown={(e) => { if (e.key === 'Enter') void addCustom(); }}
+						placeholder="Add custom model id (e.g. org/model)"
+						dir="ltr"
+						className="w-72 min-w-48 max-w-xs flex-1 rounded-lg border border-dashed border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+					/>
+					<button
+						onClick={() => void addCustom()}
+						disabled={adding || !newId.trim()}
+						className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
+					>
+						<Plus size={14} />
+						{adding ? 'Adding…' : 'Add model'}
+					</button>
+				</div>
 
 				<div className="grid min-h-0 flex-1 grid-cols-2 gap-4 p-6 pt-4">
 					<section className="flex min-h-0 flex-col rounded-xl border border-[var(--nx-border)]">
