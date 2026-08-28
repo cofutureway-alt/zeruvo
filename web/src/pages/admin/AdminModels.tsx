@@ -111,12 +111,12 @@ export default function AdminModels() {
 				</header>
 
 				{/* create */}
-				<div className="flex gap-2">
+				<div className="flex flex-wrap gap-2">
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder="New category name (e.g. Anthropic)"
-						className="w-80 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
+						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500 sm:w-80"
 					/>
 					<button
 						onClick={create}
@@ -140,7 +140,7 @@ export default function AdminModels() {
 							return (
 								<section key={c.id} className="overflow-hidden rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)]">
 									{/* header row */}
-									<div className="flex items-center gap-3 px-5 py-3.5">
+									<div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
 										<button onClick={() => toggleExpanded(c.id)} className="text-[var(--nx-muted)] hover:text-zinc-100" aria-label="Toggle">
 											{open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
 										</button>
@@ -151,7 +151,7 @@ export default function AdminModels() {
 												<Building2 size={17} />
 											</div>
 										)}
-										<div className="min-w-0 flex-1">
+										<div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
 											<p className="truncate font-medium">{c.name}</p>
 											<p className="text-[11px] text-[var(--nx-muted)]">{members.length} model{members.length === 1 ? '' : 's'}</p>
 										</div>
@@ -287,7 +287,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 					</label>
 				</div>
 
-				<div className="grid min-h-0 flex-1 grid-cols-2 gap-4 p-6 pt-4">
+				<div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 pt-4 lg:grid-cols-2 lg:overflow-y-hidden">
 					{/* available */}
 					<section className="flex min-h-0 flex-col rounded-xl border border-[var(--nx-border)]">
 						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">Catalog <span className="text-[var(--nx-muted)]">({candidates.length})</span></h3>

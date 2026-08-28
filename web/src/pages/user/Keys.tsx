@@ -76,7 +76,7 @@ export default function Keys() {
 					</p>
 				</header>
 
-				<div className="flex max-w-md gap-2">
+				<div className="flex max-w-md flex-wrap gap-2">
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
@@ -118,8 +118,8 @@ export default function Keys() {
 					</div>
 				)}
 
-				<div className="overflow-hidden rounded-xl border border-[var(--nx-border)]">
-					<table className="w-full text-sm">
+				<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
+					<table className="w-full min-w-[560px] text-sm">
 						<thead className="bg-zinc-900/60 text-xs uppercase tracking-wide text-[var(--nx-muted)]">
 							<tr>
 								<th className="px-4 py-3 text-start">Name</th>

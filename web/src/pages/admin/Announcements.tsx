@@ -43,8 +43,8 @@ export default function Announcements() {
 	return (
 		<DashboardShell variant="admin" email={email}>
 			<div className="space-y-6">
-				<header className="flex items-center justify-between">
-					<div>
+				<header className="flex flex-wrap items-center justify-between gap-3">
+					<div className="min-w-0">
 						<h1 className="text-xl font-semibold tracking-tight">Announcements</h1>
 						<p className="mt-0.5 text-sm text-[var(--nx-muted)]">
 							Popups with audience targeting + the scrolling marquee above the header.
@@ -124,7 +124,7 @@ function CreateInline({ onDone, onSaved }: { onDone: () => void; onSaved: () => 
 
 	return (
 		<div className="space-y-3 rounded-xl border border-cyan-500/40 bg-[var(--nx-surface)] p-5">
-			<div className="flex gap-2">
+			<div className="flex flex-wrap gap-2">
 				<select value={type} onChange={(e) => setType(e.target.value as typeof type)} className="rounded-lg border border-[var(--nx-border)] bg-[var(--nx-surface)] px-3 py-2 text-sm outline-none">
 					<option value="popup">Popup</option>
 					<option value="marquee">Marquee bar</option>

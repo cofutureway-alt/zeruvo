@@ -204,7 +204,7 @@ function UserManagerModal({ user, plans, onClose, onChanged }: {
 						{/* role */}
 						<section className="rounded-xl border border-[var(--nx-border)] p-4">
 							<h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--nx-muted)]">Role</h3>
-							<div className="flex gap-2">
+							<div className="flex flex-wrap gap-2">
 								{user.role === 'admin' ? (
 									<button onClick={() => act('set_role', { role: 'user' })} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm hover:border-amber-500/60 hover:text-amber-400 disabled:opacity-40">
 										{busy === 'set_role' ? <Loader2 size={14} className="animate-spin" /> : <ShieldOff size={14} />}

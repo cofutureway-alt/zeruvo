@@ -76,8 +76,8 @@ export default function Providers() {
 	return (
 		<DashboardShell variant="admin" email={email}>
 			<div className="space-y-6">
-				<header className="flex items-center justify-between">
-					<div>
+				<header className="flex flex-wrap items-center justify-between gap-3">
+					<div className="min-w-0">
 						<h1 className="font-display text-xl font-semibold tracking-tight">Providers</h1>
 						<p className="mt-0.5 text-sm text-[var(--nx-muted)]">Connect upstream providers, manage their API keys and curate model catalogs.</p>
 					</div>
@@ -209,7 +209,7 @@ function CreateProviderModal({ onClose, onCreated }: { onClose: () => void; onCr
 	return (
 		<Modal title="Add provider" onClose={onClose}>
 			<div className="space-y-4">
-				<div className="grid grid-cols-2 gap-3">
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{(['openrouter', 'custom'] as const).map((k) => (
 						<button
 							key={k}

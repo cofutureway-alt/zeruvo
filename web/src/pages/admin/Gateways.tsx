@@ -103,7 +103,7 @@ export default function Gateways() {
 				</header>
 
 				<section className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-6">
-					<div className="flex items-center gap-3">
+					<div className="flex flex-wrap items-center gap-3">
 						<div className="grid size-10 place-items-center rounded-xl bg-cyan-500/10">
 							<Wallet size={20} className="text-cyan-400" />
 						</div>

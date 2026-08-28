@@ -70,8 +70,8 @@ export default function Coupons() {
 					</button>
 				</div>
 
-				<div className="overflow-hidden rounded-xl border border-[var(--nx-border)]">
-					<table className="w-full text-sm">
+				<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
+					<table className="w-full min-w-[600px] text-sm">
 						<thead className="bg-zinc-900/60 text-xs uppercase tracking-wide text-[var(--nx-muted)]">
 							<tr>
 								<th className="px-4 py-3 text-start">Code</th>

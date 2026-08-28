@@ -17,6 +17,8 @@ import {
 	Wallet,
 	PanelLeftClose,
 	PanelLeftOpen,
+	Menu,
+	X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -65,6 +67,7 @@ export function DashboardShell({
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [collapsed, setCollapsed] = useState(false);
+	const [mobileOpen, setMobileOpen] = useState(false);
 
 	const nav = variant === 'user' ? userNav : adminNav;
 
@@ -81,23 +84,53 @@ export function DashboardShell({
 
 	return (
 		<div className="flex min-h-dvh bg-[var(--nx-bg)]">
+			{/* mobile top bar */}
+			<div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--nx-border)] bg-[var(--nx-surface)] px-4 lg:hidden">
+				<button
+					onClick={() => setMobileOpen(true)}
+					className="grid size-9 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+					aria-label="Open menu"
+				>
+					<Menu size={20} />
+				</button>
+				<div className="flex items-center gap-2">
+					<div className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-xs font-bold text-white">
+						N
+					</div>
+					<span className="text-sm font-semibold tracking-tight">Zeruvo AI</span>
+				</div>
+			</div>
+
+			{/* mobile drawer overlay */}
+			{mobileOpen && (
+				<div
+					className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden"
+					onClick={() => setMobileOpen(false)}
+				/>
+			)}
+
 			<aside
-				className={`sticky top-0 flex h-dvh shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-[width] duration-200 ${
-					collapsed ? 'w-[68px]' : 'w-64'
-				}`}
+				className={`fixed inset-y-0 start-0 z-50 flex w-64 shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
+					!mobileOpen ? 'rtl:translate-x-full ltr:-translate-x-full' : ''
+				} ${collapsed ? 'lg:w-[68px]' : 'lg:w-64'}`}
 			>
 				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
+					<button
+						onClick={() => setMobileOpen(false)}
+						className="rounded-lg p-1 text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100 lg:hidden"
+						aria-label="Close menu"
+					>
+						<X size={18} />
+					</button>
 					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 text-sm font-bold text-white">
 						N
 					</div>
-					{!collapsed && (
-						<div className="min-w-0">
+					<div className={`min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
 							<p className="truncate text-sm font-semibold tracking-tight">Zeruvo AI</p>
 							<p className="truncate text-[11px] text-[var(--nx-muted)]">
 								{variant === 'admin' ? 'Admin Console' : 'Console'}
 							</p>
 						</div>
-					)}
 				</div>
 
 				<nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
@@ -105,6 +138,7 @@ export function DashboardShell({
 						<Link
 							key={to}
 							to={to}
+							onClick={() => setMobileOpen(false)}
 							title={collapsed ? String(label ?? t(`dashboard.${labelKey}`)) : undefined}
 							className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
 								isActive(to)
@@ -116,33 +150,32 @@ export function DashboardShell({
 								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-cyan-400" />
 							)}
 							<Icon size={17} className="shrink-0" />
-							{!collapsed && <span className="truncate">{label ?? t(`dashboard.${labelKey}`)}</span>}
+							<span className={`truncate ${collapsed ? 'lg:hidden' : ''}`}>{label ?? t(`dashboard.${labelKey}`)}</span>
 						</Link>
 					))}
 				</nav>
 
-				<div className="border-t border-[var(--nx-border)] p-2.5">
+				<div className={`border-t border-[var(--nx-border)] p-2.5 ${collapsed ? 'lg:px-2.5' : ''}`}>
 					<Link
 						to={variant === 'admin' ? '/dashboard' : '/admin'}
+						onClick={() => setMobileOpen(false)}
 						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
 					>
 						<ShieldCheck size={17} className="shrink-0" />
-						{!collapsed && <span>{variant === 'admin' ? 'User view' : 'Admin'}</span>}
+						<span className={`${collapsed ? 'lg:hidden' : ''}`}>{variant === 'admin' ? 'User view' : 'Admin'}</span>
 					</Link>
 					<button
-						onClick={logout}
+						onClick={() => { setMobileOpen(false); void logout(); }}
 						className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
 					>
 						<LogOut size={17} className="shrink-0" />
-						{!collapsed && <span>{t('common.logout')}</span>}
+						<span className={`${collapsed ? 'lg:hidden' : ''}`}>{t('common.logout')}</span>
 					</button>
 					<div className="mt-1 flex items-center justify-between gap-2 border-t border-[var(--nx-border)] pt-2.5">
-						{!collapsed && (
-							<span className="min-w-0 truncate px-2 text-[11px] text-[var(--nx-muted)]">{email}</span>
-						)}
+						<span className={`min-w-0 truncate px-2 text-[11px] text-[var(--nx-muted)] ${collapsed ? 'lg:hidden' : ''}`}>{email}</span>
 						<button
 							onClick={() => setCollapsed((c) => !c)}
-							className="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+							className="hidden size-8 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100 lg:grid"
 							aria-label="Toggle sidebar"
 						>
 							{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
@@ -151,7 +184,7 @@ export function DashboardShell({
 				</div>
 			</aside>
 
-			<main className="min-w-0 flex-1 p-8">
+			<main className="min-w-0 flex-1 p-4 pt-20 sm:p-6 lg:p-8 lg:pt-8">
 				{children ?? <Outlet />}
 			</main>
 		</div>
