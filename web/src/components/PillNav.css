@@ -10,12 +10,18 @@
 .pill-nav-container {
 	position: relative;
 	z-index: 40;
-}
-
-.pill-nav {
+	/* Layout tokens live on the container, not on .pill-nav — the mobile
+	   popover is a *sibling* of .pill-nav and could not inherit them there. */
 	--nav-h: 46px;
 	--pill-pad-x: 17px;
 	--pill-gap: 3px;
+	/* one row geometry shared by every item in the mobile panel */
+	--m-row-h: 44px;
+	--m-row-pad-x: 18px;
+	--m-gap: 6px;
+}
+
+.pill-nav {
 	display: flex;
 	width: 100%;
 	align-items: center;
@@ -222,8 +228,17 @@
 	top: calc(100% + 10px);
 	z-index: 998;
 	visibility: hidden;
+	/* .mobile-only supplies `display: flex`. Without an explicit direction the
+	   link list and the auth block laid out side by side in a row. */
+	flex-direction: column;
+	box-sizing: border-box;
+	max-height: calc(100dvh - 8rem);
+	overflow-y: auto;
+	overscroll-behavior: contain;
 	transform-origin: top center;
-	border-radius: 26px;
+	/* 6px frame around a 22px inner pill radius = 28px outer */
+	padding: var(--m-gap);
+	border-radius: 28px;
 	background: var(--nav-bg-solid);
 	border: 1px solid var(--nav-border);
 	box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.9);
@@ -234,35 +249,84 @@
 .mobile-menu-list {
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: var(--m-gap);
 	margin: 0;
-	padding: 6px;
+	padding: 0;
 	list-style: none;
 }
-.mobile-menu-popover .mobile-menu-link {
-	display: block;
+
+/* Every row in the panel is the same object — same height, radius, inline
+   padding and start-aligned label — so the labels form one clean column.
+   Variants change colour only, never geometry. */
+.mobile-row {
+	display: flex;
+	width: 100%;
+	min-height: var(--m-row-h);
+	box-sizing: border-box;
+	align-items: center;
+	gap: 9px;
+	padding-inline: var(--m-row-pad-x);
+	border: 1px solid transparent;
 	border-radius: 9999px;
-	padding: 12px 18px;
 	background: var(--pill-bg);
 	color: var(--pill-text);
+	cursor: pointer;
+	font-family: inherit;
 	font-size: 0.9rem;
 	font-weight: 500;
+	line-height: 1.2;
+	text-align: start;
 	text-decoration: none;
-	transition: background-color 0.2s ease, color 0.2s ease;
+	transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
-.mobile-menu-popover .mobile-menu-link:hover {
+.mobile-row:hover {
 	background: color-mix(in srgb, var(--base) 14%, transparent);
 	color: var(--nav-text);
-	cursor: pointer;
 }
-.mobile-menu-popover .mobile-menu-link.is-active {
+
+/* current page */
+.mobile-row.is-active {
+	background: color-mix(in srgb, var(--base) 18%, transparent);
+	border-color: color-mix(in srgb, var(--base) 45%, transparent);
+	color: var(--nav-text);
+	font-weight: 600;
+}
+
+/* primary — dashboard / sign up */
+.mobile-row--solid,
+.mobile-row--solid:hover {
 	background: var(--base);
+	border-color: var(--base);
 	color: var(--hover-text);
 	font-weight: 600;
 }
+.mobile-row--solid:hover {
+	background: var(--base-2);
+	border-color: var(--base-2);
+}
+
+/* secondary — log in / log out */
+.mobile-row--outline {
+	background: transparent;
+	border-color: var(--nav-border-bright);
+}
+
+/* admin — tinted label, no fill */
+.mobile-row--accent {
+	background: transparent;
+	color: var(--base);
+	font-weight: 600;
+}
+
 .mobile-menu-extra {
+	display: flex;
+	flex-direction: column;
+	gap: var(--m-gap);
+	margin-top: var(--m-gap);
+	padding-top: var(--m-gap);
+	/* popover padding is on the popover now, so this rule spans exactly the
+	   width of the rows above it instead of running to the rounded edges */
 	border-top: 1px solid var(--nav-border);
-	padding: 8px 6px 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {

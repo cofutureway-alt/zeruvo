@@ -87,56 +87,40 @@ export function SiteHeader() {
 					actions={actions}
 					mobileExtra={(close) =>
 						loading ? (
-							<div className="flex gap-2 px-1" aria-busy="true">
-								<div className="nx-skeleton h-10 flex-1 rounded-full" />
-								<div className="nx-skeleton h-10 flex-1 rounded-full" />
+							<div className="space-y-1.5" aria-busy="true">
+								<div className="nx-skeleton h-11 w-full rounded-full" />
+								<div className="nx-skeleton h-11 w-full rounded-full" />
 							</div>
 						) : user ? (
-							<div className="space-y-2">
+							<>
 								{isAdmin && (
-									<Link
-										to="/admin"
-										onClick={close}
-										className="block rounded-full px-4 py-2.5 text-sm text-[var(--nx-accent-strong)] transition hover:bg-white/[0.06]"
-									>
+									<Link to="/admin" onClick={close} className="mobile-row mobile-row--accent">
 										{t('admin.title')}
 									</Link>
 								)}
-								<Link
-									to="/dashboard"
-									onClick={close}
-									className="flex items-center justify-center gap-1.5 rounded-full bg-[var(--nx-accent)] py-2.5 text-sm font-semibold text-[#04202a]"
-								>
-									<LayoutDashboard size={15} />
+								<Link to="/dashboard" onClick={close} className="mobile-row mobile-row--solid">
 									{t('nav.dashboard')}
 								</Link>
 								<button
+									type="button"
 									onClick={() => {
 										close();
 										void logout();
 									}}
-									className="w-full rounded-full border border-[var(--nx-border)] py-2.5 text-sm text-[var(--nx-muted)] transition hover:text-zinc-100"
+									className="mobile-row mobile-row--outline"
 								>
 									{t('common.logout')}
 								</button>
-							</div>
+							</>
 						) : (
-							<div className="flex gap-2">
-								<Link
-									to="/login"
-									onClick={close}
-									className="flex-1 rounded-full border border-[var(--nx-border)] py-2.5 text-center text-sm text-[var(--nx-muted)]"
-								>
+							<>
+								<Link to="/login" onClick={close} className="mobile-row mobile-row--outline">
 									{t('nav.login')}
 								</Link>
-								<Link
-									to="/signup"
-									onClick={close}
-									className="flex-1 rounded-full bg-[var(--nx-accent)] py-2.5 text-center text-sm font-semibold text-[#04202a]"
-								>
+								<Link to="/signup" onClick={close} className="mobile-row mobile-row--solid">
 									{t('nav.signup')}
 								</Link>
-							</div>
+							</>
 						)
 					}
 				/>

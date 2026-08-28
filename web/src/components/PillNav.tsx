@@ -84,6 +84,7 @@ export default function PillNav({
 	const mobileMenuRef = useRef<HTMLDivElement>(null);
 	const navItemsRef = useRef<HTMLDivElement>(null);
 	const logoRef = useRef<HTMLAnchorElement | null>(null);
+	const containerRef = useRef<HTMLDivElement>(null);
 
 	const reduce = useMemo(
 		() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -234,6 +235,34 @@ export default function PillNav({
 		toggleMobileMenu();
 	};
 
+	// While the panel is open: dismiss on outside tap and on Escape, and bail out
+	// if the viewport crosses to desktop — the popover is display:none there, so
+	// leaving the state set would strand the hamburger in its X pose.
+	useEffect(() => {
+		if (!isMobileMenuOpen) return;
+
+		const onPointerDown = (e: PointerEvent) => {
+			if (!containerRef.current?.contains(e.target as Node)) closeMobileMenu();
+		};
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') closeMobileMenu();
+		};
+		const mq = window.matchMedia('(min-width: 861px)');
+		const onBreakpoint = () => {
+			if (mq.matches) closeMobileMenu();
+		};
+
+		document.addEventListener('pointerdown', onPointerDown);
+		document.addEventListener('keydown', onKeyDown);
+		mq.addEventListener('change', onBreakpoint);
+		return () => {
+			document.removeEventListener('pointerdown', onPointerDown);
+			document.removeEventListener('keydown', onKeyDown);
+			mq.removeEventListener('change', onBreakpoint);
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [isMobileMenuOpen]);
+
 	const cssVars = {
 		'--base': baseColor,
 		'--base-2': baseColorAlt,
@@ -257,7 +286,7 @@ export default function PillNav({
 	);
 
 	return (
-		<div className="pill-nav-container" style={cssVars}>
+		<div className="pill-nav-container" style={cssVars} ref={containerRef}>
 			<nav className={`pill-nav ${className}`} aria-label="Primary">
 				{isRouterLink(logoHref) ? (
 					<Link
@@ -342,6 +371,7 @@ export default function PillNav({
 					onClick={toggleMobileMenu}
 					aria-label="Toggle menu"
 					aria-expanded={isMobileMenuOpen}
+					aria-controls="pill-nav-mobile-menu"
 					ref={hamburgerRef}
 				>
 					<span className="hamburger-line" />
@@ -349,14 +379,15 @@ export default function PillNav({
 				</button>
 			</nav>
 
-			<div className="mobile-menu-popover mobile-only" ref={mobileMenuRef}>
+			<div className="mobile-menu-popover mobile-only" id="pill-nav-mobile-menu" ref={mobileMenuRef}>
 				<ul className="mobile-menu-list">
 					{items.map((item, i) => (
 						<li key={item.href || `mobile-item-${i}`}>
 							{isRouterLink(item.href) ? (
 								<Link
 									to={item.href}
-									className={`mobile-menu-link${activeHref === item.href ? ' is-active' : ''}`}
+									className={`mobile-row${activeHref === item.href ? ' is-active' : ''}`}
+									aria-current={activeHref === item.href ? 'page' : undefined}
 									onClick={closeMobileMenu}
 								>
 									{item.label}
@@ -364,7 +395,7 @@ export default function PillNav({
 							) : (
 								<a
 									href={item.href}
-									className={`mobile-menu-link${activeHref === item.href ? ' is-active' : ''}`}
+									className={`mobile-row${activeHref === item.href ? ' is-active' : ''}`}
 									onClick={closeMobileMenu}
 								>
 									{item.label}
