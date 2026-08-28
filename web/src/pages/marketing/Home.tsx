@@ -1,7 +1,11 @@
+import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SplitText, CountUp, SpotlightCard, Reveal, SignalDot } from '../../components/fx';
+
+// WebGL backdrop — kept out of the main bundle, mounts after first paint.
+const MoltenMetal = lazy(() => import('../../components/MoltenMetal'));
 
 const copy = {
 	en: {
@@ -46,9 +50,38 @@ export default function Home() {
 	return (
 		<main>
 			{/* ================= HERO ================= */}
-			<section className="relative overflow-hidden">
-				{/* grid lives on its own layer so its bottom mask never fades the copy */}
-				<div className="nx-grid-bg pointer-events-none absolute inset-0" aria-hidden="true" />
+			<section className="relative isolate overflow-hidden">
+				{/* molten core, faded out before it reaches the proof strip */}
+				<div
+					className="pointer-events-none absolute inset-0 -z-10 [mask-image:linear-gradient(to_bottom,black_50%,transparent_98%)]"
+					aria-hidden="true"
+				>
+					<Suspense fallback={null}>
+						<MoltenMetal
+							color1="#03202b"
+							color2="#06b6d4"
+							color3="#defffa"
+							colorMode="frost"
+							speed={0.22}
+							scale={4.4}
+							detail={3}
+							glow={1.5}
+							coreSize={0.1}
+							swirl={1.1}
+							fold={-0.2}
+							blackPoint={0.07}
+							brightness={1.15}
+							grain
+							grainIntensity={0.04}
+							mouseInteraction
+							mouseStrength={0.22}
+							opacity={0.62}
+							maxDpr={1.6}
+						/>
+					</Suspense>
+				</div>
+				{/* routing grid on top, tying the hero back to the header */}
+				<div className="nx-grid-bg pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
 				<div className="relative mx-auto max-w-3xl px-6 pb-28 pt-20 text-center md:pt-28">
 					<p className="inline-flex items-center gap-2.5 rounded-full border border-[var(--nx-border)] bg-[var(--nx-bg-raised)] px-4 py-1.5 font-data text-[11px] tracking-wide text-[var(--nx-muted)]">
 						<SignalDot />

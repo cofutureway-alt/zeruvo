@@ -1,0 +1,9 @@
+.molten-metal-container {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	/* Sits behind hero copy — never swallow clicks on the CTAs. Pointer drift
+	   is tracked on window instead (see MoltenMetal.tsx). */
+	pointer-events: none;
+}
