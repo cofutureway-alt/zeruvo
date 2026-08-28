@@ -46,9 +46,10 @@ try {
 	const { data: { user } } = await supabase.auth.getUser();
 	if (!user) return Response.json({ error: 'unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-	let body: { plan_id?: string; coupon_code?: string };
+	let body: { plan_id?: string; coupon_code?: string; renew?: boolean };
 	try { body = await req.json(); } catch { return Response.json({ error: 'invalid json' }, { status: 400, headers: CORS_HEADERS }) }
 	if (!body.plan_id) return Response.json({ error: 'plan_id required' }, { status: 400, headers: CORS_HEADERS })
+	const renew = Boolean(body.renew);
 
 	const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -58,11 +59,35 @@ try {
 		return Response.json({ error: 'Payment gateway not configured' }, { status: 503, headers: CORS_HEADERS })
 	}
 
+	// Renewals may target a plan that is currently hidden from the catalog
+	// (active=false) as long as the subscriber's own plan is renewable, so we
+	// key the lookup on id only and validate activity/renewability after.
 	const { data: plan } = await admin.from('plans')
-		.select('id,name,price_usd,is_free').eq('id', body.plan_id).eq('active', true).single();
+		.select('id,name,price_usd,is_free,active,renewable').eq('id', body.plan_id).single();
 	if (!plan) return Response.json({ error: 'plan not found' }, { status: 404, headers: CORS_HEADERS })
 	if (plan.is_free || Number(plan.price_usd) === 0) {
 		return Response.json({ error: 'plan is free — no checkout needed' }, { status: 400, headers: CORS_HEADERS })
+	}
+
+	// A new purchase requires an active (catalog-visible) plan.
+	if (!renew && !plan.active) {
+		return Response.json({ error: 'plan is no longer available' }, { status: 404, headers: CORS_HEADERS })
+	}
+	// Renewal requires the plan to be renewable and the user to currently hold
+	// an active subscription to it — otherwise nothing to renew.
+	let previousExpiresAt: string | null = null;
+	if (renew) {
+		if (!plan.renewable) {
+			return Response.json({ error: 'this plan is not renewable' }, { status: 403, headers: CORS_HEADERS })
+		}
+		const { data: sub } = await admin.from('subscriptions')
+			.select('expires_at').eq('user_id', user.id).eq('plan_id', body.plan_id)
+			.eq('status', 'active').gt('expires_at', new Date().toISOString())
+			.order('expires_at', { ascending: false }).limit(1).maybeSingle();
+		if (!sub) {
+			return Response.json({ error: 'no active subscription to renew' }, { status: 403, headers: CORS_HEADERS })
+		}
+		previousExpiresAt = sub.expires_at;
 	}
 
 	// ---------- coupon validation (server-side source of truth) ----------
@@ -137,7 +162,15 @@ try {
 		gateway_ref: orderId,
 		status: 'pending',
 		coupon_code: appliedCoupon,
-		meta: { plan_id: body.plan_id, mode: gw.mode, discount_pct: discountPct, list_price_usd: priceUsd, egp_rate: egpRate },
+		meta: {
+			plan_id: body.plan_id,
+			mode: gw.mode,
+			discount_pct: discountPct,
+			list_price_usd: priceUsd,
+			egp_rate: egpRate,
+			renew,
+			previous_expires_at: previousExpiresAt,
+		},
 	});
 	if (insertErr) {
 		console.error('payment insert error:', JSON.stringify(insertErr));

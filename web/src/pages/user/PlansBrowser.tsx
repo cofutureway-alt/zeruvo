@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ArrowUpRight, X, Loader2, ShieldCheck, Ticket, Tag } from 'lucide-react';
+import { Check, ArrowUpRight, X, Loader2, ShieldCheck, Ticket, Tag, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { SkeletonPlans } from '../../components/skeleton';
@@ -14,6 +14,7 @@ interface PlanPublic {
 	duration_count: number;
 	is_free: boolean;
 	default_free: boolean;
+	renewable: boolean;
 }
 
 /**
@@ -29,13 +30,34 @@ export default function PlansBrowser() {
 	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string }>>([]);
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
-	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string; priceUsd: number } | null>(null);
+	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string; priceUsd: number; renew: boolean } | null>(null);
 	const [egpRate, setEgpRate] = useState(50);
 
 	useEffect(() => {
 		void (async () => {
+			const { data: { user } } = await supabase.auth.getUser();
+			let currentPlanId: string | null = null;
+			if (user) {
+				const { data: sub } = await supabase
+					.from('subscriptions')
+					.select('plan_id')
+					.eq('user_id', user.id)
+					.eq('status', 'active')
+					.gt('expires_at', new Date().toISOString())
+					.maybeSingle();
+				currentPlanId = sub?.plan_id ?? null;
+			}
+			setCurrentPlanId(currentPlanId);
+
+			// Include the user's current plan even if it's hidden from the
+			// catalog (soft-deleted), so they can see it and renew it.
+			let plansQuery = supabase.from('plans').select('*').order('price_usd');
+			plansQuery = currentPlanId
+				? plansQuery.or(`active.eq.true,id.eq.${currentPlanId}`)
+				: plansQuery.eq('active', true);
+
 			const [{ data: plansData }, { data: modelsData }, { data: pmData }, { data: gwData }] = await Promise.all([
-				supabase.from('plans').select('*').eq('active', true).order('price_usd'),
+				plansQuery,
 				supabase.from('models').select('id,upstream_model_id').eq('enabled_for_users', true),
 				supabase.from('plan_models').select('plan_id,model_id'),
 				supabase.from('payment_gateways').select('egp_rate').eq('gateway', 'kashier').maybeSingle(),
@@ -46,18 +68,6 @@ export default function PlansBrowser() {
 			setModels(modelsData ?? []);
 			setPlanModels(grouped);
 			if (gwData?.egp_rate) setEgpRate(Number(gwData.egp_rate));
-
-			const { data: { user } } = await supabase.auth.getUser();
-			if (user) {
-				const { data: sub } = await supabase
-					.from('subscriptions')
-					.select('plan_id')
-					.eq('user_id', user.id)
-					.eq('status', 'active')
-					.gt('expires_at', new Date().toISOString())
-					.maybeSingle();
-				setCurrentPlanId(sub?.plan_id ?? null);
-			}
 			setLoading(false);
 		})();
 	}, []);
@@ -101,17 +111,21 @@ export default function PlansBrowser() {
 							</div>
 							{ids.length > 4 && <p className="mt-1.5 text-[11px] text-[var(--nx-muted)]">+{ids.length - 4} more</p>}
 							<button
-								disabled={isCurrent}
-								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en, priceUsd: Number(p.price_usd) })}
+								disabled={isCurrent && !(p.renewable && Number(p.price_usd) > 0)}
+								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en, priceUsd: Number(p.price_usd), renew: isCurrent })}
 								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition ${
-									isCurrent
+									isCurrent && !(p.renewable && Number(p.price_usd) > 0)
 										? 'cursor-default border border-cyan-500/50 text-cyan-400'
 										: 'bg-cyan-600 text-white hover:bg-cyan-500'
 								}`}
 							>
-								{isCurrent ? (
+								{isCurrent && !(p.renewable && Number(p.price_usd) > 0) ? (
 									<>
 										<Check size={15} /> Current plan
+									</>
+								) : isCurrent && p.renewable ? (
+									<>
+										<RotateCw size={15} /> Renew
 									</>
 								) : (
 									<>
@@ -132,6 +146,7 @@ export default function PlansBrowser() {
 					planName={checkoutFor.name}
 					priceUsd={checkoutFor.priceUsd}
 					egpRate={egpRate}
+					renew={checkoutFor.renew}
 					onClose={() => {
 						setCheckoutFor(null);
 						window.location.reload();
@@ -144,7 +159,7 @@ export default function PlansBrowser() {
 
 type Step = 'coupon' | 'paying';
 
-function CheckoutModal(props: { planId: string; planName: string; priceUsd: number; egpRate: number; onClose: () => void }) {
+function CheckoutModal(props: { planId: string; planName: string; priceUsd: number; egpRate: number; renew: boolean; onClose: () => void }) {
 	const [step, setStep] = useState<Step>('coupon');
 	const [couponCode, setCouponCode] = useState('');
 	const [discountPct, setDiscountPct] = useState(0);
@@ -211,7 +226,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 					Authorization: `Bearer ${session?.access_token ?? ''}`,
 					apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
 				},
-				body: JSON.stringify({ plan_id: props.planId, coupon_code: appliedCode }),
+				body: JSON.stringify({ plan_id: props.planId, coupon_code: appliedCode, renew: props.renew }),
 			});
 			const json = await res.json().catch(() => null);
 			if (!res.ok) setPayError(json?.error ?? 'Checkout failed');
@@ -224,7 +239,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 			<div className="flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
 				<header className="flex items-center justify-between border-b border-[var(--nx-border)] px-5 py-3.5">
 					<div>
-						<p className="text-sm font-medium">Subscribe — {props.planName}</p>
+						<p className="text-sm font-medium">{props.renew ? 'Renew' : 'Subscribe'} — {props.planName}</p>
 						<p className="flex items-center gap-1 text-[11px] text-[var(--nx-muted)]">
 							<ShieldCheck size={11} />
 							Secured by Kashier · 1 USD ≈ {props.egpRate} EGP

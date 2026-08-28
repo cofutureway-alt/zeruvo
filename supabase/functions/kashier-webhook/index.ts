@@ -123,8 +123,23 @@ if (req.method === 'OPTIONS') {
 		.select('duration_unit,duration_count').eq('id', planId).single();
 	if (!plan) return Response.json({ error: 'plan missing' }, { status: 500, headers: CORS_HEADERS })
 
+	const paidMeta = payment.meta as any;
 	const now = new Date();
-	const expires = new Date(now);
+	// Renewals extend from the current subscription's expiry (never earlier
+	// than now), so an early renewal stacks on top of the remaining time.
+	const renew = Boolean(paidMeta?.renew);
+	let base = now;
+	if (renew) {
+		const { data: current } = await admin.from('subscriptions')
+			.select('expires_at').eq('user_id', payment.user_id).eq('plan_id', planId)
+			.eq('status', 'active').gt('expires_at', now.toISOString())
+			.order('expires_at', { ascending: false }).limit(1).maybeSingle();
+		if (current?.expires_at) {
+			const cur = new Date(current.expires_at);
+			if (cur > now) base = cur;
+		}
+	}
+	const expires = new Date(base);
 	if (plan.duration_unit === 'days') expires.setDate(expires.getDate() + plan.duration_count);
 	else if (plan.duration_unit === 'months') expires.setMonth(expires.getMonth() + plan.duration_count);
 	else expires.setFullYear(expires.getFullYear() + plan.duration_count);
@@ -143,7 +158,6 @@ if (req.method === 'OPTIONS') {
 	}).eq('id', payment.id);
 
 	// record coupon redemption only on successful payment
-	const paidMeta = payment.meta as any;
 	if (paidMeta?.coupon_code) {
 		await admin.from('coupon_redemptions')
 			.insert({ coupon_code: paidMeta.coupon_code, user_id: payment.user_id, payment_id: payment.id })

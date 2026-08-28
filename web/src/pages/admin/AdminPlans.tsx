@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Check } from 'lucide-react';
+import { Plus, Pencil, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
+import { ConfirmModal } from './Providers';
 
 interface PlanRow {
 	id: string;
@@ -14,6 +15,7 @@ interface PlanRow {
 	is_free: boolean;
 	default_free: boolean;
 	active: boolean;
+	renewable: boolean;
 	plan_models?: Array<{ model_id: string }>;
 }
 
@@ -24,6 +26,8 @@ export default function AdminPlans() {
 	const [plans, setPlans] = useState<PlanRow[]>([]);
 	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string }>>([]);
 	const [editing, setEditing] = useState<PlanRow | 'new' | null>(null);
+	const [deleting, setDeleting] = useState<PlanRow | null>(null);
+	const [togglingId, setTogglingId] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
 		const { data: { user } } = await supabase.auth.getUser();
@@ -44,6 +48,23 @@ export default function AdminPlans() {
 	useEffect(() => {
 		void load();
 	}, [load]);
+
+	async function toggleActive(p: PlanRow) {
+		setTogglingId(p.id);
+		await supabase.from('plans').update({ active: !p.active }).eq('id', p.id);
+		setTogglingId(null);
+		await load();
+	}
+
+	async function doDelete() {
+		if (!deleting) return;
+		const id = deleting.id;
+		setDeleting(null);
+		// Soft-delete: hide from the catalog. Current subscribers keep their
+		// subscription (quota continues) and can still renew per `renewable`.
+		await supabase.from('plans').update({ active: false }).eq('id', id);
+		await load();
+	}
 
 	return (
 		<DashboardShell variant="admin" email={email}>
@@ -67,7 +88,11 @@ export default function AdminPlans() {
 									<h3 className="truncate font-medium">{p.name.en}</h3>
 									<p className="truncate text-xs text-[var(--nx-muted)]">{p.description?.en ?? ''}</p>
 								</div>
-								{p.default_free && <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-400">default free</span>}
+								<div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+									{p.default_free && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-400">default free</span>}
+									{!p.active && <span className="rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] text-zinc-400">hidden</span>}
+									{!p.renewable && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400">renewal off</span>}
+								</div>
 							</div>
 							<div className="mt-4 flex items-baseline gap-1">
 								<span className="text-2xl font-semibold tabular-nums">${Number(p.price_usd).toFixed(2)}</span>
@@ -75,15 +100,45 @@ export default function AdminPlans() {
 							</div>
 							<p className="mt-2 text-sm tabular-nums text-[var(--nx-muted)]">{Number(p.daily_weighted_tokens).toLocaleString()} weighted tokens / day</p>
 							<p className="mt-1 text-xs text-[var(--nx-muted)]">{(p.plan_models ?? []).length} models included</p>
-							<button onClick={() => setEditing(p)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--nx-border)] py-2 text-sm hover:border-cyan-500/50 hover:text-cyan-300">
-								<Pencil size={14} />
-								Edit
-							</button>
+							<div className="mt-4 grid grid-cols-2 gap-2">
+								<button
+									onClick={() => setEditing(p)}
+									className="flex items-center justify-center gap-2 rounded-lg border border-[var(--nx-border)] py-2 text-sm hover:border-cyan-500/50 hover:text-cyan-300"
+								>
+									<Pencil size={14} />
+									Edit
+								</button>
+								<button
+									onClick={() => toggleActive(p)}
+									disabled={togglingId === p.id}
+									className={`flex items-center justify-center gap-2 rounded-lg border py-2 text-sm transition disabled:opacity-40 ${p.active ? 'border-[var(--nx-border)] hover:border-amber-500/50 hover:text-amber-300' : 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/5'}`}
+									title={p.active ? 'Hide from users' : 'Show to users'}
+								>
+									{p.active ? <EyeOff size={14} /> : <Eye size={14} />}
+									{p.active ? 'Hide' : 'Show'}
+								</button>
+								<button
+									onClick={() => setDeleting(p)}
+									className="col-span-2 flex items-center justify-center gap-2 rounded-lg border border-red-500/30 py-2 text-sm text-red-400 hover:bg-red-500/10"
+								>
+									<Trash2 size={14} />
+									Delete
+								</button>
+							</div>
 						</article>
 					))}
 				</div>
 
 				{editing && <PlanEditor initial={editing === 'new' ? null : editing} models={models} onClose={() => { setEditing(null); void load(); }} />}
+				{deleting && (
+					<ConfirmModal
+						title={`Delete ${deleting.name.en}?`}
+						body="This removes the plan from the user catalog. Current subscribers are NOT affected until their subscription expires, and they can still renew if renewals are enabled for this plan."
+						confirmLabel="Hide plan"
+						onCancel={() => setDeleting(null)}
+						onConfirm={doDelete}
+					/>
+				)}
 			</div>
 		</DashboardShell>
 	);
@@ -99,6 +154,7 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 	const [count, setCount] = useState(String(p?.duration_count ?? 30));
 	const [isFree, setIsFree] = useState(p?.is_free ?? false);
 	const [isDefault, setIsDefault] = useState(p?.default_free ?? false);
+	const [renewable, setRenewable] = useState(p?.renewable ?? true);
 	const [selected, setSelected] = useState<Set<string>>(new Set((p?.plan_models ?? []).map((pm) => pm.model_id)));
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -117,7 +173,8 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 			duration_count: Number(count),
 			is_free: isFree,
 			default_free: isFree && isDefault,
-			active: true,
+			active: p?.active ?? true,
+			renewable,
 		};
 
 		let planId = p?.id;
@@ -185,7 +242,7 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 						</label>
 					</div>
 
-					<div className="flex gap-5">
+					<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
 						<label className="flex items-center gap-2 text-sm">
 							<input type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} />
 							Free plan
@@ -193,6 +250,10 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 						<label className={`flex items-center gap-2 text-sm ${!isFree && 'opacity-40'}`}>
 							<input type="checkbox" disabled={!isFree} checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
 							Default for new signups
+						</label>
+						<label className="flex items-center gap-2 text-sm">
+							<input type="checkbox" checked={renewable} onChange={(e) => setRenewable(e.target.checked)} />
+							Allow renewal for current subscribers
 						</label>
 					</div>
 
