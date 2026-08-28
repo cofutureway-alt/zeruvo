@@ -47,26 +47,14 @@
 	flex: none;
 	align-items: center;
 	gap: 10px;
-	padding-inline: 5px 17px;
 	text-decoration: none;
 	color: inherit;
-	transition: border-color 0.25s ease;
-}
-.pill-logo:hover {
-	border-color: var(--nav-border-bright);
 }
 .pill-logo__mark {
-	display: grid;
-	width: 34px;
-	height: 34px;
+	display: flex;
 	flex: none;
-	place-items: center;
-	border-radius: 50%;
-	background: linear-gradient(135deg, var(--base-2), var(--base));
-	color: #04202a;
-	font-size: 14px;
-	font-weight: 700;
-	will-change: transform;
+	align-items: center;
+	justify-content: center;
 }
 .pill-logo__word {
 	font-family: var(--font-display);

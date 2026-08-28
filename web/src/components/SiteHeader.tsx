@@ -77,10 +77,9 @@ export function SiteHeader() {
 						<img
 							src="/logo.png"
 							alt=""
-							className="size-[34px] shrink-0 rounded-full object-contain"
+							className="size-[34px] shrink-0 object-contain"
 						/>
 					}
-					logoWord="Zeruvo AI"
 					logoAriaLabel="Zeruvo AI — home"
 					items={items}
 					activeHref={activeHref}

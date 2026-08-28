@@ -78,8 +78,6 @@ export default function PillNav({
 	const circleRefs = useRef<(HTMLSpanElement | null)[]>([]);
 	const tlRefs = useRef<(gsap.core.Timeline | undefined)[]>([]);
 	const activeTweenRefs = useRef<(gsap.core.Tween | undefined)[]>([]);
-	const logoMarkRef = useRef<HTMLSpanElement>(null);
-	const logoTweenRef = useRef<gsap.core.Tween | null>(null);
 	const hamburgerRef = useRef<HTMLButtonElement>(null);
 	const mobileMenuRef = useRef<HTMLDivElement>(null);
 	const navItemsRef = useRef<HTMLDivElement>(null);
@@ -187,14 +185,6 @@ export default function PillNav({
 		activeTweenRefs.current[i] = tl.tweenTo(0, { duration: 0.2, ease, overwrite: 'auto' });
 	};
 
-	const handleLogoEnter = () => {
-		const mark = logoMarkRef.current;
-		if (!mark || reduce) return;
-		logoTweenRef.current?.kill();
-		gsap.set(mark, { rotate: 0 });
-		logoTweenRef.current = gsap.to(mark, { rotate: 360, duration: 0.45, ease, overwrite: 'auto' });
-	};
-
 	const toggleMobileMenu = () => {
 		const next = !isMobileMenuOpen;
 		setIsMobileMenuOpen(next);
@@ -278,7 +268,7 @@ export default function PillNav({
 
 	const brand = (
 		<>
-			<span className="pill-logo__mark" ref={logoMarkRef}>
+			<span className="pill-logo__mark">
 				{logo}
 			</span>
 			{logoWord && <span className="pill-logo__word">{logoWord}</span>}
@@ -290,20 +280,18 @@ export default function PillNav({
 			<nav className={`pill-nav ${className}`} aria-label="Primary">
 				{isRouterLink(logoHref) ? (
 					<Link
-						className="pill-logo pill-capsule"
+						className="pill-logo"
 						to={logoHref}
 						aria-label={logoAriaLabel}
-						onMouseEnter={handleLogoEnter}
 						ref={logoRef}
 					>
 						{brand}
 					</Link>
 				) : (
 					<a
-						className="pill-logo pill-capsule"
+						className="pill-logo"
 						href={logoHref}
 						aria-label={logoAriaLabel}
-						onMouseEnter={handleLogoEnter}
 						ref={logoRef}
 					>
 						{brand}
