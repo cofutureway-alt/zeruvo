@@ -109,7 +109,7 @@ export function DashboardShell({
 
 			<aside
 				className={`fixed inset-y-0 start-0 z-50 flex w-64 shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
-					!mobileOpen ? 'rtl:translate-x-full ltr:-translate-x-full' : ''
+					!mobileOpen ? 'max-lg:ltr:-translate-x-full max-lg:rtl:translate-x-full' : ''
 				} ${collapsed ? 'lg:w-[68px]' : 'lg:w-64'}`}
 			>
 				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
