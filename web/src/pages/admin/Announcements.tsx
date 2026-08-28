@@ -50,12 +50,12 @@ export default function Announcements() {
 							Popups with audience targeting + the scrolling marquee above the header.
 						</p>
 					</div>
-					<a
-						href="#create-note"
+					<button
+						onClick={() => setEditingId('new')}
 						className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm text-[var(--nx-muted)]"
 					>
-						Create via table editor
-					</a>
+						Create announcement
+					</button>
 				</header>
 
 				{items.length === 0 && (
