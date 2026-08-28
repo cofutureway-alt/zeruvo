@@ -179,16 +179,27 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 
 		let planId = p?.id;
 		if (planId) {
-			if (isDefault) await supabase.from('plans').update({ default_free: false }).neq('id', planId);
-			await supabase.from('plans').update(row).eq('id', planId);
-			await supabase.from('plan_models').delete().eq('plan_id', planId);
+			if (isDefault) {
+				const { error: e } = await supabase.from('plans').update({ default_free: false }).neq('id', planId);
+				if (e) { setError(e.message); setBusy(false); return; }
+			}
+			const { error: e } = await supabase.from('plans').update(row).eq('id', planId);
+			if (e) { setError(e.message); setBusy(false); return; }
+			const { error: de } = await supabase.from('plan_models').delete().eq('plan_id', planId);
+			if (de) { setError(de.message); setBusy(false); return; }
 		} else {
-			if (isDefault) await supabase.from('plans').update({ default_free: false }).eq('default_free', true);
-			const { data } = await supabase.from('plans').insert(row).select().single();
-			planId = data?.id;
+			if (isDefault) {
+				const { error: e } = await supabase.from('plans').update({ default_free: false }).eq('default_free', true);
+				if (e) { setError(e.message); setBusy(false); return; }
+			}
+			const { data, error: e } = await supabase.from('plans').insert(row).select().single();
+			if (e) { setError(e.message); setBusy(false); return; }
+			if (!data) { setError('Insert returned no row — plan not created.'); setBusy(false); return; }
+			planId = data.id;
 		}
 		if (planId && selected.size) {
-			await supabase.from('plan_models').insert([...selected].map((model_id) => ({ plan_id: planId!, model_id })));
+			const { error: pe } = await supabase.from('plan_models').insert([...selected].map((model_id) => ({ plan_id: planId!, model_id })));
+			if (pe) { setError(pe.message); setBusy(false); return; }
 		}
 		props.onClose();
 	}
