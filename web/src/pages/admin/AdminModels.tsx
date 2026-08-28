@@ -40,6 +40,7 @@ export default function AdminModels() {
 			supabase
 				.from('models')
 				.select('id,upstream_model_id,display_name,category_id,enabled_for_users')
+				.eq('enabled_for_users', true)
 				.order('upstream_model_id'),
 		]);
 		setCats(catRows ?? []);
@@ -179,7 +180,7 @@ export default function AdminModels() {
 										<ul className="divide-y divide-[var(--nx-border)] border-t border-[var(--nx-border)] bg-[var(--nx-bg-raised)]/40">
 											{members.map((m) => (
 												<li key={m.id} className="flex items-center gap-3 px-5 py-2 text-sm">
-													<span className="min-w-0 flex-1 truncate font-mono text-xs">{m.upstream_model_id}</span>
+													<span className="min-w-0 flex-1 truncate text-xs">{m.display_name || m.upstream_model_id}</span>
 													{m.enabled_for_users && (
 														<span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">live</span>
 													)}
@@ -249,7 +250,12 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 	}
 
 	const candidates = models.filter((m) => !isIn(m)).filter(
-		(m) => !query.trim() || m.upstream_model_id.toLowerCase().includes(query.toLowerCase()),
+		(m) => {
+			if (!query.trim()) return true;
+			const q = query.toLowerCase();
+			return m.upstream_model_id.toLowerCase().includes(q)
+				|| (m.display_name?.toLowerCase().includes(q) ?? false);
+		},
 	);
 	const chosen = models.filter((m) => isIn(m));
 
@@ -295,7 +301,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 							{candidates.map((m) => (
 								<li key={m.id}>
 									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-cyan-500/5">
-										<span className="truncate font-mono text-xs">{m.upstream_model_id}</span>
+										<span className="truncate text-xs">{m.display_name || m.upstream_model_id}</span>
 										<Plus size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-cyan-400" />
 									</button>
 								</li>
@@ -310,7 +316,7 @@ function AssignModelsModal({ category, models, onClose, onSaved }: {
 							{chosen.map((m) => (
 								<li key={m.id}>
 									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-red-500/5">
-										<span className="truncate font-mono text-xs">{m.upstream_model_id}</span>
+										<span className="truncate text-xs">{m.display_name || m.upstream_model_id}</span>
 										<X size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-red-400" />
 									</button>
 								</li>

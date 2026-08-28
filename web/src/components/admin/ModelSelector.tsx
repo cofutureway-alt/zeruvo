@@ -18,6 +18,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 	const [syncing, setSyncing] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [multipliers, setMultipliers] = useState<Record<string, string>>({});
+	const [names, setNames] = useState<Record<string, string>>({});
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
@@ -29,8 +30,13 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 			.order('upstream_model_id');
 		setModels((data ?? []) as ModelRow[]);
 		const mults: Record<string, string> = {};
-		for (const m of data ?? []) mults[m.upstream_model_id] = String(Number(m.usage_multiplier) || 1);
+		const nms: Record<string, string> = {};
+		for (const m of data ?? []) {
+			mults[m.upstream_model_id] = String(Number(m.usage_multiplier) || 1);
+			if (m.display_name) nms[m.id] = m.display_name;
+		}
 		setMultipliers(mults);
+		setNames(nms);
 		setLoading(false);
 	}, [props.provider.id]);
 
@@ -80,7 +86,11 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 			const mult = Number(multipliers[m.upstream_model_id] ?? 1) || 1;
 			await supabase
 				.from('models')
-				.update({ enabled_for_users: m.enabled_for_users, usage_multiplier: mult })
+				.update({
+					enabled_for_users: m.enabled_for_users,
+					usage_multiplier: mult,
+					display_name: names[m.id]?.trim() || m.upstream_model_id,
+				})
 				.eq('id', m.id);
 		}
 		props.onClose();
@@ -134,7 +144,12 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 								available.map((m) => (
 									<li key={m.id}>
 										<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-start text-sm hover:bg-cyan-500/5">
-											<span className="truncate">{m.upstream_model_id}</span>
+											<div className="min-w-0 truncate">
+												<span>{m.upstream_model_id}</span>
+												{names[m.id] && (
+													<span className="ms-2 text-xs text-[var(--nx-muted)]">→ {names[m.id]}</span>
+												)}
+											</div>
 											<ArrowRight size={15} className="shrink-0 text-[var(--nx-muted)] group-hover:text-cyan-400" />
 										</button>
 									</li>
@@ -153,11 +168,19 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 								<li className="px-4 py-6 text-sm text-[var(--nx-muted)]">Nothing exposed yet.</li>
 							) : (
 								live.map((m) => (
-									<li key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-										<button onClick={() => toggle(m.id)} className="group flex min-w-0 flex-1 items-center gap-3 text-start">
+									<li key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 text-sm">
+										<button onClick={() => toggle(m.id)} className="group flex min-w-0 basis-40 flex-1 items-center gap-3 text-start">
 											<ArrowLeft size={15} className="shrink-0 text-[var(--nx-muted)] group-hover:text-red-400" />
 											<span className="truncate">{m.upstream_model_id}</span>
 										</button>
+										<input
+											type="text"
+											value={names[m.id] ?? m.upstream_model_id}
+											onChange={(e) => setNames({ ...names, [m.id]: e.target.value })}
+											placeholder="Custom name"
+											title="Custom name shown to users"
+											className="w-36 shrink-0 rounded-md border border-[var(--nx-border)] bg-transparent px-2 py-1 text-xs outline-none focus:border-cyan-500"
+										/>
 										<label className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--nx-muted)]">
 											×
 											<input
