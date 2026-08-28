@@ -62,7 +62,11 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 				},
 				body: JSON.stringify({ provider_id: props.provider.id }),
 			});
-			if (!res.ok) setError((await res.json()).error ?? 'Sync failed');
+			const body = await res.json().catch(() => null);
+			if (!res.ok) { setError(body?.error ?? 'Sync failed'); setSyncing(false); return; }
+			if (body?.synced > 0 && body?.added === 0 && body?.updated_meta === 0) {
+				setError(`Synced ${body.synced} upstream model(s) but none were new. ${body.note ?? ''}`);
+			}
 		} catch {
 			setError('Sync failed');
 		}

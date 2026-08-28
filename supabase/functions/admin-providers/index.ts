@@ -174,6 +174,6 @@ if (req.method === 'OPTIONS') {
 		}
 	} catch (err) {
 		console.error(err);
-		return Response.json({ error: 'internal error' }, { status: 500, headers: CORS_HEADERS })
+		return Response.json({ error: `internal error: ${err instanceof Error ? err.message : String(err)}` }, { status: 500, headers: CORS_HEADERS })
 	}
 });

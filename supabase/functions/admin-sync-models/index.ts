@@ -115,7 +115,11 @@ if (req.method === 'OPTIONS') {
 	const json = await res.json();
 
 	type AnyModel = Record<string, any>;
-	const upstream: AnyModel[] = json.data ?? [];
+	// Handle both OpenRouter shape {data: [...]} and flat arrays [...]
+	const upstream: AnyModel[] = Array.isArray(json) ? json : (json.data ?? []);
+	if (upstream.length === 0) {
+		return Response.json({ synced: 0, added: 0, updated_meta: 0, rich_metadata: false, keys_probed: keyResults, note: 'upstream returned 0 models (response shape may differ from expected {data: [...]})' }, { headers: CORS_HEADERS });
+	}
 	const isRich = upstream.some((m) => m.context_length != null || m.pricing != null);
 
 	const { data: existing } = await admin
@@ -126,14 +130,20 @@ if (req.method === 'OPTIONS') {
 
 	let added = 0, updatedMeta = 0;
 	const rows: any[] = [];
+	const slugSeen = new Map<string, number>(); // track slug collisions
 
 	for (const m of upstream) {
 		const prev = byUpstream.get(m.id);
 		// build metadata-rich row
+		let slug = m.id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, '');
+		const dup = slugSeen.get(slug) ?? 0;
+		slugSeen.set(slug, dup + 1);
+		if (dup > 0) slug = `${slug}-${dup + 1}`; // append suffix on collision
+
 		const row: any = {
 			provider_id: body.provider_id,
 			upstream_model_id: m.id,
-			slug: m.id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, ''),
+			slug,
 		};
 
 		if (isRich) {
@@ -153,17 +163,31 @@ if (req.method === 'OPTIONS') {
 			added++;
 		} else if (isRich) {
 			// refresh metadata but preserve admin choices
-			await admin.from('models').update({
+			const { error: updErr } = await admin.from('models').update({
 				display_name: row.display_name,
 				description: row.description,
 				context_window: row.context_window,
 				tags: row.tags,
 			}).eq('id', prev.id);
-			updatedMeta++;
+			if (updErr) console.error('metadata update failed', m.id, updErr.message);
+			else updatedMeta++;
 		}
 	}
 
-	if (rows.length) await admin.from('models').insert(rows);
+	if (rows.length) {
+		const { error: insErr } = await admin.from('models').insert(rows);
+		if (insErr) {
+			console.error('bulk insert failed', insErr.message, 'attempting one-by-one');
+			// fallback: insert one by one, skip duplicates
+			let inserted = 0;
+			for (const r of rows) {
+				const { error } = await admin.from('models').insert(r);
+				if (!error) inserted++;
+				else console.error('skip', r.upstream_model_id, error.message);
+			}
+			added = inserted;
+		}
+	}
 
 	return Response.json({
 		synced: upstream.length,
