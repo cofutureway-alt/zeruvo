@@ -9,6 +9,7 @@ interface ModelRow {
 	display_name: string;
 	usage_multiplier: string | number;
 	enabled_for_users: boolean;
+	slug?: string;
 }
 
 /** Side-by-side catalog picker with mandatory multiplier (Phase 3 port). */
@@ -28,7 +29,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 		setLoading(true);
 		const { data } = await supabase
 			.from('models')
-			.select('id,upstream_model_id,display_name,usage_multiplier,enabled_for_users')
+			.select('id,upstream_model_id,display_name,usage_multiplier,enabled_for_users,slug')
 			.eq('provider_id', props.provider.id)
 			.order('upstream_model_id');
 		setModels((data ?? []) as ModelRow[]);
@@ -116,7 +117,16 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 		const raw = newId.trim();
 		if (!raw) return;
 		setAdding(true); setError(null);
-		const slug = raw.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, '');
+		// slug is globally unique across all providers (models_slug_key). A
+		// different provider, or another id sanitizing to the same string, may
+		// already hold it — so probe the DB and suffix until free.
+		let slug = raw.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, '');
+		let candidate = slug;
+		for (let i = 2; ; i++) {
+			const { data: clash } = await supabase.from('models').select('id').eq('slug', candidate).maybeSingle();
+			if (!clash) { slug = candidate; break; }
+			candidate = `${slug}-${i}`;
+		}
 		const { error: insErr } = await supabase.from('models').insert({
 			provider_id: props.provider.id,
 			upstream_model_id: raw,
@@ -125,7 +135,22 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 			enabled_for_users: true,
 			usage_multiplier: 1,
 		});
-		if (insErr) { setError(insErr.message); setAdding(false); return; }
+		if (insErr?.code === '23505' && insErr.message.includes('models_slug_key')) {
+			// race with a concurrent insert: retry with a random suffix
+			const { error: retryErr } = await supabase.from('models').insert({
+				provider_id: props.provider.id,
+				upstream_model_id: raw,
+				display_name: raw,
+				slug: `${slug}-${Array.from(crypto.getRandomValues(new Uint32Array(1)))[0].toString(36)}`,
+				enabled_for_users: true,
+				usage_multiplier: 1,
+			});
+			if (retryErr) { setError(retryErr.message); setAdding(false); return; }
+		} else if (insErr) {
+			setError(insErr.message);
+			setAdding(false);
+			return;
+		}
 		setNewId('');
 		setAdding(false);
 		await load();
