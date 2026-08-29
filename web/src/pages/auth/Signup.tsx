@@ -111,11 +111,13 @@ export default function Signup() {
 									<GithubIcon size={16} />
 									{t('auth.continueWithGithub')}
 								</motion.button>
+								{signupMode !== 'github_only' && (
 								<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
 									<span className="h-px flex-1 bg-[var(--nx-border)]" />
 									or
 									<span className="h-px flex-1 bg-[var(--nx-border)]" />
 								</div>
+								)}
 							</motion.div>
 
 							{/* email signup — hidden entirely in github_only mode */}
