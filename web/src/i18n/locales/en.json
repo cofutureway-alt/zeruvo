@@ -63,5 +63,52 @@
 		"create": "Create",
 		"search": "Search",
 		"logout": "Log out"
+	},
+	"footer": {
+		"tagline": "Unified AI gateway — one API key for every model, with weighted billing and full observability.",
+		"product": "Product",
+		"legal": "Legal",
+		"language": "Language",
+		"privacy": "Privacy Policy",
+		"refund": "Refund Policy",
+		"rights": "All rights reserved.",
+		"gatewayNote": "OpenAI-compatible · Anthropic native · Gemini native"
+	},
+	"legal": {
+		"lastUpdated": "Last updated:"
+	},
+	"privacy": {
+		"title": "Privacy Policy",
+		"collectTitle": "What we collect",
+		"collectBody": "We collect the minimum data required to operate the service:",
+		"collectItem1": "Account data — email address (or GitHub identity), profile preferences and locale.",
+		"collectItem2": "Usage data — request logs (model, token counts, timestamps, status codes) tied to your API keys.",
+		"collectItem3": "Billing data — plan subscriptions and payment references. Card numbers never touch our servers; payments are processed by our payment provider.",
+		"collectItem4": "Technical data — IP address and user agent for security and abuse prevention.",
+		"useTitle": "How we use it",
+		"useBody": "Your data is used solely to provide the service: authenticating you, enforcing plan quotas, billing, showing usage analytics, and securing the platform. We do not sell your data and we do not use your prompts to train models.",
+		"sharingTitle": "Sharing",
+		"sharingBody": "Requests are forwarded to the upstream model providers you select — they process the prompt content under their own privacy policies. We share data with infrastructure providers (hosting, database, payments) strictly to operate the service, and only when legally required will we disclose data to authorities.",
+		"retentionTitle": "Retention",
+		"retentionBody": "Account and billing records are kept while your account is active. Request logs are retained for service diagnostics; you can delete your account at any time, which removes your profile and personal data (aggregate/anonymous records may be retained).",
+		"rightsTitle": "Your rights",
+		"rightsBody": "You may access, correct or delete your personal data at any time from your dashboard settings, or by contacting us. Account deletion is immediate and irreversible.",
+		"contactTitle": "Contact",
+		"contactBody": "For any privacy question or request, contact support through the in-app channels or the email listed on the site."
+	},
+	"refund": {
+		"title": "Refund Policy",
+		"noRefundsTitle": "All payments are final — no refunds under any circumstances",
+		"noRefundsBody": "By purchasing a subscription plan you explicitly agree that payments are non-refundable. This applies to every case: change of mind, unused allowance, accidental purchase, plan feature changes, quota exhaustion, service downtime, or account termination. No exceptions are granted.",
+		"scopeTitle": "What this covers",
+		"scopeBody": "This policy covers all purchases: subscription plans, renewals, upgrades and any add-on payments made through our checkout — regardless of how much of the plan period or daily allowance you actually used.",
+		"billingTitle": "Before you buy",
+		"billingBody": "Plans include a free tier so you can evaluate the service before paying. Model availability, multipliers and limits are listed on the Models and Pricing pages — review them carefully before purchasing.",
+		"cancelTitle": "Cancellation",
+		"cancelBody": "You may stop renewing at any time from your dashboard; your plan stays active until the end of the period you already paid for. Cancellation stops future charges only — it does not trigger any refund of past payments.",
+		"chargesTitle": "Disputed charges",
+		"chargesBody": "Initiating a chargeback or payment dispute without first contacting support may result in immediate account suspension. Contact us first — we will always respond to billing questions.",
+		"contactTitle": "Contact",
+		"contactBody": "Billing questions are handled through the in-app support channels. Refund requests are evaluated against this policy: payments are final and non-refundable."
 	}
 }

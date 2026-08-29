@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -69,7 +69,17 @@ export function DashboardShell({
 	const location = useLocation();
 	const [collapsed, setCollapsed] = useState(false);
 	const [mobileOpen, setMobileOpen] = useState(false);
+	// the announcement marquee is a fixed 36px bar above this shell — offset
+	// the mobile top bar below it so the hamburger is never covered
+	const [marqueeCount, setMarqueeCount] = useState(0);
 
+	useEffect(() => {
+		const onCount = (e: Event) => setMarqueeCount((e as CustomEvent<number>).detail ?? 0);
+		window.addEventListener('nexor-marquee-count', onCount);
+		return () => window.removeEventListener('nexor-marquee-count', onCount);
+	}, []);
+
+	const marqueeOffset = marqueeCount * 36;
 	const nav = variant === 'user' ? userNav : adminNav;
 
 	async function logout() {
@@ -85,8 +95,11 @@ export function DashboardShell({
 
 	return (
 		<div className="flex min-h-dvh bg-[var(--nx-bg)]">
-			{/* mobile top bar */}
-			<div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--nx-border)] bg-[var(--nx-surface)] px-4 lg:hidden">
+			{/* mobile top bar — offset below any announcement marquee bars */}
+			<div
+				className="fixed inset-x-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--nx-border)] bg-[var(--nx-surface)] px-4 lg:hidden"
+				style={{ top: marqueeOffset }}
+			>
 				<button
 					onClick={() => setMobileOpen(true)}
 					className="grid size-9 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
@@ -112,6 +125,7 @@ export function DashboardShell({
 				className={`fixed inset-y-0 start-0 z-50 flex w-64 shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
 					!mobileOpen ? 'max-lg:ltr:-translate-x-full max-lg:rtl:translate-x-full' : ''
 				} ${collapsed ? 'lg:w-[68px]' : 'lg:w-64'}`}
+				style={{ top: marqueeOffset }}
 			>
 				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
 					<button
@@ -181,7 +195,7 @@ export function DashboardShell({
 				</div>
 			</aside>
 
-			<main className="min-w-0 flex-1 p-4 pt-20 sm:p-6 lg:p-8 lg:pt-8">
+			<main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8 lg:pt-8" style={{ paddingTop: `calc(3.5rem + ${marqueeOffset + 16}px)` }}>
 				{children ?? <Outlet />}
 			</main>
 		</div>

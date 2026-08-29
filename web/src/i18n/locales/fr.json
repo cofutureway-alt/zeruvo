@@ -63,5 +63,52 @@
 		"create": "Créer",
 		"search": "Rechercher",
 		"logout": "Déconnexion"
+	},
+	"footer": {
+		"tagline": "Passerelle IA unifiée — une clé API pour tous les modèles, avec facturation pondérée et observabilité complète.",
+		"product": "Produit",
+		"legal": "Mentions légales",
+		"language": "Langue",
+		"privacy": "Politique de confidentialité",
+		"refund": "Politique de remboursement",
+		"rights": "Tous droits réservés.",
+		"gatewayNote": "Compatible OpenAI · Anthropic natif · Gemini natif"
+	},
+	"legal": {
+		"lastUpdated": "Dernière mise à jour :"
+	},
+	"privacy": {
+		"title": "Politique de confidentialité",
+		"collectTitle": "Ce que nous collectons",
+		"collectBody": "Nous collectons le minimum de données nécessaire au fonctionnement du service :",
+		"collectItem1": "Données de compte — adresse e-mail (ou identité GitHub), préférences de profil et langue.",
+		"collectItem2": "Données d’utilisation — journaux de requêtes (modèle, compte de tokens, horodatages, codes d’état) liés à vos clés API.",
+		"collectItem3": "Données de facturation — abonnements et références de paiement. Les numéros de carte ne touchent jamais nos serveurs ; les paiements sont traités par notre prestataire.",
+		"collectItem4": "Données techniques — adresse IP et agent utilisateur pour la sécurité et la prévention des abus.",
+		"useTitle": "Comment nous les utilisons",
+		"useBody": "Vos données servent uniquement à fournir le service : authentification, application des quotas, facturation, analytique d’utilisation et sécurisation de la plateforme. Nous ne vendons pas vos données et n’utilisons pas vos prompts pour entraîner des modèles.",
+		"sharingTitle": "Partage",
+		"sharingBody": "Les requêtes sont transmises aux fournisseurs de modèles que vous sélectionnez — ils traitent le contenu selon leurs propres politiques. Nous partageons des données avec les prestataires d’infrastructure (hébergement, base de données, paiements) strictement pour exploiter le service, et ne les divulguons aux autorités que sur obligation légale.",
+		"retentionTitle": "Conservation",
+		"retentionBody": "Les enregistrements de compte et de facturation sont conservés tant que votre compte est actif. Les journaux de requêtes sont conservés pour le diagnostic ; vous pouvez supprimer votre compte à tout moment, ce qui efface votre profil et vos données personnelles (les enregistrements agrégés/anonymes peuvent être conservés).",
+		"rightsTitle": "Vos droits",
+		"rightsBody": "Vous pouvez accéder à vos données personnelles, les corriger ou les supprimer à tout moment depuis les paramètres de votre tableau de bord, ou en nous contactant. La suppression du compte est immédiate et irréversible.",
+		"contactTitle": "Contact",
+		"contactBody": "Pour toute question de confidentialité, contactez le support via les canaux intégrés ou l’e-mail indiqué sur le site."
+	},
+	"refund": {
+		"title": "Politique de remboursement",
+		"noRefundsTitle": "Tous les paiements sont définitifs — aucun remboursement quelles que soient les circonstances",
+		"noRefundsBody": "En achetant un abonnement, vous acceptez explicitement que les paiements ne soient pas remboursables. Cela s’applique à tous les cas : changement d’avis, quota non utilisé, achat accidentel, modification des fonctionnalités, épuisement du quota, indisponibilité du service ou résiliation du compte. Aucune exception.",
+		"scopeTitle": "Champ d’application",
+		"scopeBody": "Cette politique couvre tous les achats : abonnements, renouvellements, mises à niveau et tout paiement complémentaire effectué via notre paiement — quelle que soit la part de la période ou du quota réellement utilisée.",
+		"billingTitle": "Avant d’acheter",
+		"billingBody": "Les forfaits incluent une offre gratuite pour évaluer le service avant de payer. La disponibilité des modèles, les multiplicateurs et les limites figurent sur les pages Modèles et Tarifs — examinez-les attentivement avant l’achat.",
+		"cancelTitle": "Résiliation",
+		"cancelBody": "Vous pouvez arrêter le renouvellement à tout moment depuis votre tableau de bord ; votre forfait reste actif jusqu’à la fin de la période déjà payée. La résiliation stoppe uniquement les frais futurs — elle ne déclenche aucun remboursement.",
+		"chargesTitle": "Paiements contestés",
+		"chargesBody": "Initier un chargeback ou un litige sans d’abord contacter le support peut entraîner la suspension immédiate du compte. Contactez-nous d’abord — nous répondons toujours aux questions de facturation.",
+		"contactTitle": "Contact",
+		"contactBody": "Les questions de facturation sont traitées via les canaux de support intégrés. Les demandes de remboursement sont évaluées selon cette politique : les paiements sont définitifs et non remboursables."
 	}
 }

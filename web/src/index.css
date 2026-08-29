@@ -219,3 +219,25 @@ body {
 		animation: none;
 	}
 }
+
+/* ---- announcement marquee scroll (RTL-aware) ---- */
+@keyframes marquee-scroll {
+	from { transform: translateX(0); }
+	to   { transform: translateX(-50%); }
+}
+[dir='rtl'] .marquee-scroll {
+	animation-name: marquee-scroll-rtl;
+}
+@keyframes marquee-scroll-rtl {
+	from { transform: translateX(0); }
+	to   { transform: translateX(50%); }
+}
+.marquee-track {
+	animation: marquee-scroll 30s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.marquee-track {
+		animation: none;
+		overflow-x: auto;
+	}
+}

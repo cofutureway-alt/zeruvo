@@ -11,6 +11,8 @@ import Models from './pages/marketing/Models';
 import ModelDetail from './pages/marketing/ModelDetail';
 import Pricing from './pages/marketing/Pricing';
 import Docs from './pages/marketing/Docs';
+import Privacy from './pages/marketing/Privacy';
+import Refund from './pages/marketing/Refund';
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
 import PendingVerification from './pages/auth/PendingVerification';
@@ -84,6 +86,8 @@ function App() {
 					<Route path="/models/:slug" element={<ModelDetail />} />
 					<Route path="/pricing" element={<Pricing />} />
 					<Route path="/docs" element={<Docs />} />
+					<Route path="/privacy" element={<Privacy />} />
+					<Route path="/refund" element={<Refund />} />
 					{/* user dashboard */}
 					<Route
 						path="/dashboard"

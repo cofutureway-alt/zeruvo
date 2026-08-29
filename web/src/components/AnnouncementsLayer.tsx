@@ -21,6 +21,8 @@ interface Announcement {
 }
 
 const DISMISS_KEY = 'nexor-dismissed-announcements';
+/** Shared with AppLayout / DashboardShell so they can offset fixed bars. */
+export const MARQUEEChangeEvent = 'nexor-marquee-count';
 
 function dismissed(): Set<string> {
 	try {
@@ -36,6 +38,11 @@ export function AnnouncementsLayer() {
 	const { i18n } = useTranslation();
 	const [marquees, setMarquees] = useState<Announcement[]>([]);
 	const [popup, setPopup] = useState<Announcement | null>(null);
+
+	// announce the marquee count so fixed bars below can offset themselves
+	useEffect(() => {
+		window.dispatchEvent(new CustomEvent(MARQUEEChangeEvent, { detail: marquees.length }));
+	}, [marquees.length]);
 
 	useEffect(() => {
 		void (async () => {
@@ -93,27 +100,33 @@ export function AnnouncementsLayer() {
 
 	return (
 		<>
-			{marquees.map((m) => (
+			{marquees.map((m, index) => (
 				<div
 					key={m.id}
-					className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-cyan-600 to-teal-500 text-white"
+					className="fixed inset-x-0 z-[60] flex h-9 items-center overflow-hidden bg-gradient-to-r from-cyan-600 to-teal-500 text-white"
+					style={{ top: `${index * 36}px` }}
 				>
-					<div className="marquee-track flex min-w-max items-center gap-16 px-4 text-xs font-medium">
-						{Array.from({ length: 6 }).map((_, i) => (
-							<span key={i} className="flex items-center gap-3">
-								{m.body_text[locale] ?? m.body_text.en}
-								{m.cta_url && (
-									<a
-										href={m.cta_url}
-										target="_blank"
-										rel="noreferrer"
-										className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 hover:bg-white/25"
-									>
-										{m.cta_label[locale] ?? m.cta_label.en ?? 'Open'}
-										<ArrowUpRight size={11} />
-									</a>
-								)}
-							</span>
+					<div className="marquee-track flex min-w-max items-center gap-16 px-4 text-xs font-medium will-change-transform">
+						{/* two identical halves → translateX(-50%) loops seamlessly */}
+						{[0, 1].map((half) => (
+							<div key={half} className="flex min-w-max items-center gap-16">
+								{Array.from({ length: 4 }).map((_, i) => (
+									<span key={i} className="flex items-center gap-3">
+										{m.body_text[locale] ?? m.body_text.en}
+										{m.cta_url && (
+											<a
+												href={m.cta_url}
+												target="_blank"
+												rel="noreferrer"
+												className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 hover:bg-white/25"
+											>
+												{m.cta_label[locale] ?? m.cta_label.en ?? 'Open'}
+												<ArrowUpRight size={11} />
+											</a>
+										)}
+									</span>
+								))}
+							</div>
 						))}
 					</div>
 					<button
