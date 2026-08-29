@@ -178,12 +178,23 @@ if (req.method === 'OPTIONS') {
 		const { error: insErr } = await admin.from('models').insert(rows);
 		if (insErr) {
 			console.error('bulk insert failed', insErr.message, 'attempting one-by-one');
-			// fallback: insert one by one, skip duplicates
+			// fallback: insert one by one; on a global slug collision (same slug
+			// already held by a model in another provider) retry with a suffix
+			// instead of skipping — the public /models/:slug page needs unique slugs.
 			let inserted = 0;
 			for (const r of rows) {
 				const { error } = await admin.from('models').insert(r);
-				if (!error) inserted++;
-				else console.error('skip', r.upstream_model_id, error.message);
+				if (!error) { inserted++; continue; }
+				if (error.code === '23505' && /models_slug_key/.test(error.message)) {
+					const { error: retryErr } = await admin.from('models').insert({
+						...r,
+						slug: `${r.slug}-${crypto.randomUUID().slice(0, 8)}`,
+					});
+					if (!retryErr) inserted++;
+					else console.error('skip', r.upstream_model_id, retryErr.message);
+				} else {
+					console.error('skip', r.upstream_model_id, error.message);
+				}
 			}
 			added = inserted;
 		}
