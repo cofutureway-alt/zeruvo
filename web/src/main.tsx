@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import './index.css';
 import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
 import { AuthProvider } from './auth-context';
-import { ProtectedRoute, AdminRoute, GuestRoute } from './routes/guards';
+import { ProtectedRoute, AdminRoute, GuestRoute, PendingRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
 import Home from './pages/marketing/Home';
 import Models from './pages/marketing/Models';
@@ -13,6 +13,7 @@ import Pricing from './pages/marketing/Pricing';
 import Docs from './pages/marketing/Docs';
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
+import PendingVerification from './pages/auth/PendingVerification';
 import Dashboard from './pages/user/Dashboard';
 import Keys from './pages/user/Keys';
 import Logs from './pages/user/Logs';
@@ -28,6 +29,7 @@ import Payments from './pages/admin/Payments';
 import Coupons from './pages/admin/Coupons';
 import Announcements from './pages/admin/Announcements';
 import Gateways from './pages/admin/Gateways';
+import AdminSettings from './pages/admin/AdminSettings';
 import NotFound from './pages/NotFound';
 
 function Root() {
@@ -65,7 +67,17 @@ function App() {
 					}
 				/>
 
-				<Route element={<AppLayout />}>
+				{/* pending — GitHub account younger than the configured min age */}
+					<Route
+						path="/pending"
+						element={
+							<ProtectedRoute>
+								<PendingVerification />
+							</ProtectedRoute>
+						}
+					/>
+
+					<Route element={<AppLayout />}>
 					{/* marketing */}
 					<Route path="/" element={<Home />} />
 					<Route path="/models" element={<Models />} />
@@ -77,7 +89,9 @@ function App() {
 						path="/dashboard"
 						element={
 							<ProtectedRoute>
-								<Dashboard />
+								<PendingRoute>
+									<Dashboard />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -85,7 +99,9 @@ function App() {
 						path="/dashboard/keys"
 						element={
 							<ProtectedRoute>
-								<Keys />
+								<PendingRoute>
+									<Keys />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -93,7 +109,9 @@ function App() {
 						path="/dashboard/logs"
 						element={
 							<ProtectedRoute>
-								<Logs />
+								<PendingRoute>
+									<Logs />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -101,7 +119,9 @@ function App() {
 						path="/dashboard/plans"
 						element={
 							<ProtectedRoute>
-								<Plans />
+								<PendingRoute>
+									<Plans />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -109,7 +129,9 @@ function App() {
 						path="/dashboard/purchases"
 						element={
 							<ProtectedRoute>
-								<Purchases />
+								<PendingRoute>
+									<Purchases />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -117,7 +139,9 @@ function App() {
 						path="/dashboard/settings"
 						element={
 							<ProtectedRoute>
-								<Settings />
+								<PendingRoute>
+									<Settings />
+								</PendingRoute>
 							</ProtectedRoute>
 						}
 					/>
@@ -191,6 +215,14 @@ function App() {
 						element={
 							<AdminRoute>
 								<Gateways />
+							</AdminRoute>
+						}
+					/>
+					<Route
+						path="/admin/settings"
+						element={
+							<AdminRoute>
+								<AdminSettings />
 							</AdminRoute>
 						}
 					/>

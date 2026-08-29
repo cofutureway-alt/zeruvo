@@ -47,6 +47,7 @@ const adminNav: NavItem[] = [
 	{ to: '/admin/coupons', label: 'Coupons', Icon: Ticket },
 	{ to: '/admin/announcements', label: 'Announcements', Icon: Megaphone },
 	{ to: '/admin/gateways', label: 'Payment Gateways', Icon: Settings },
+	{ to: '/admin/settings', label: 'Signup & Auth', Icon: ShieldCheck },
 ];
 
 /**

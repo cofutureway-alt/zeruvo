@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { GithubIcon } from '../../components/GithubIcon';
+import { useAuth } from '../../auth-context';
 import AuthLayout from './AuthLayout';
 
 const ease = [0.22, 1, 0.36, 1] as [number, number, number, number];
@@ -17,6 +19,7 @@ export default function Login() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const location = useLocation();
+	const { signupMode } = useAuth();
 	const next = (location.state as { next?: string } | null)?.next ?? '/dashboard';
 	const reduced = useReducedMotion();
 
@@ -41,6 +44,20 @@ export default function Login() {
 		navigate(next, { replace: true });
 	}
 
+	async function continueWithGithub() {
+		setBusy(true);
+		setError(null);
+		const { error: err } = await supabase.auth.signInWithOAuth({
+			provider: 'github',
+			options: { redirectTo: window.location.origin },
+		});
+		if (err) {
+			setError(err.message);
+			setBusy(false);
+		}
+		// on success the browser redirects to GitHub — no navigate needed
+	}
+
 	return (
 		<AuthLayout>
 			<div className="space-y-6">
@@ -48,6 +65,31 @@ export default function Login() {
 				<motion.div {...field(reduced, 0)}>
 					<h1 className="text-xl font-semibold tracking-tight">{t('auth.loginTitle')}</h1>
 					<p className="mt-1 text-sm text-[var(--nx-muted)]">{t('auth.loginSubtitle')}</p>
+				</motion.div>
+
+				{/* GitHub OAuth — available in every signup mode (existing email users unaffected) */}
+				<motion.div {...field(reduced, 4)}>
+					{signupMode === 'github_only' && (
+						<p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+							{t('auth.githubOnlyNotice')}
+						</p>
+					)}
+					<motion.button
+						type="button"
+						onClick={continueWithGithub}
+						disabled={busy}
+						whileHover={anim ? { scale: 1.01 } : undefined}
+						whileTap={anim ? { scale: 0.98 } : undefined}
+						className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
+					>
+						<GithubIcon size={16} />
+						{t('auth.continueWithGithub')}
+					</motion.button>
+					<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
+						<span className="h-px flex-1 bg-[var(--nx-border)]" />
+						or
+						<span className="h-px flex-1 bg-[var(--nx-border)]" />
+					</div>
 				</motion.div>
 
 				<form onSubmit={onSubmit} className="space-y-4">

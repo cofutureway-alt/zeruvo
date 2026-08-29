@@ -21,7 +21,14 @@
 		"haveAccount": "已有账户？",
 		"passwordMismatch": "两次输入的密码不一致",
 		"invalidCredentials": "电子邮件或密码无效",
-		"emailInUse": "该电子邮件已被注册"
+		"emailInUse": "该电子邮件已被注册",
+		"continueWithGithub": "使用 GitHub 继续",
+		"githubOnlyNotice": "新注册需要 GitHub 账号。现有邮箱用户仍可在下方登录。",
+		"signupsDisabled": "当前已关闭新用户注册。如果您已有账号，仍可登录。",
+		"pendingTitle": "账号待审核",
+		"pendingBody": "您的 GitHub 账号年龄低于本站要求的最低年龄（{{days}} 天）。您的 GitHub 账号达到要求后，访问权限将自动解锁。",
+		"pendingUntil": "访问将于 {{date}} 解锁",
+		"pendingRecheck": "重新检查"
 	},
 	"dashboard": {
 		"title": "控制面板",

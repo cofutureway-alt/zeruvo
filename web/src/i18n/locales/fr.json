@@ -21,7 +21,14 @@
 		"haveAccount": "Vous avez déjà un compte ?",
 		"passwordMismatch": "Les mots de passe ne correspondent pas",
 		"invalidCredentials": "E-mail ou mot de passe invalide",
-		"emailInUse": "Un compte avec cet e-mail existe déjà"
+		"emailInUse": "Un compte avec cet e-mail existe déjà",
+		"continueWithGithub": "Continuer avec GitHub",
+		"githubOnlyNotice": "Les nouvelles inscriptions nécessitent un compte GitHub. Les utilisateurs existants peuvent toujours se connecter ci-dessous.",
+		"signupsDisabled": "Les nouvelles inscriptions sont fermées. Si vous avez déjà un compte, vous pouvez toujours vous connecter.",
+		"pendingTitle": "Compte en attente",
+		"pendingBody": "Votre compte GitHub est plus récent que l'âge minimum requis par ce site ({{days}} jour(s)). L'accès sera débloqué automatiquement dès que votre compte GitHub sera assez ancien.",
+		"pendingUntil": "Accès débloqué le {{date}}",
+		"pendingRecheck": "Revérifier"
 	},
 	"dashboard": {
 		"title": "Tableau de bord",

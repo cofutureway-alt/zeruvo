@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { GithubIcon } from '../../components/GithubIcon';
+import { useAuth } from '../../auth-context';
 import AuthLayout from './AuthLayout';
 
 const ease = [0.22, 1, 0.36, 1] as [number, number, number, number];
@@ -16,6 +18,7 @@ const field = (reduced: boolean | null, i: number) => ({
 export default function Signup() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const { signupMode } = useAuth();
 	const reduced = useReducedMotion();
 
 	const [email, setEmail] = useState('');
@@ -46,6 +49,21 @@ export default function Signup() {
 		setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
 	}
 
+	async function continueWithGithub() {
+		setBusy(true);
+		setError(null);
+		const { error: err } = await supabase.auth.signInWithOAuth({
+			provider: 'github',
+			options: { redirectTo: window.location.origin },
+		});
+		if (err) {
+			setError(err.message);
+			setBusy(false);
+		}
+	}
+
+	const signupClosed = signupMode === 'disabled';
+
 	return (
 		<AuthLayout>
 			<div className="space-y-6">
@@ -63,6 +81,15 @@ export default function Signup() {
 							<p className="text-sm font-medium text-[var(--nx-text)]">Account created</p>
 							<p className="text-xs text-[var(--nx-muted)]">Redirecting to your dashboard...</p>
 						</motion.div>
+					) : signupClosed ? (
+						<motion.div key="closed" exit={{ opacity: 0, scale: 0.96 }}>
+							<motion.div {...field(reduced, 0)}>
+								<h1 className="text-xl font-semibold tracking-tight">{t('auth.signupTitle')}</h1>
+								<p className="mt-4 rounded-lg bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+									{t('auth.signupsDisabled')}
+								</p>
+							</motion.div>
+						</motion.div>
 					) : (
 						<motion.div key="form" exit={{ opacity: 0, scale: 0.96 }}>
 							{/* heading */}
@@ -71,7 +98,29 @@ export default function Signup() {
 								<p className="mt-1 text-sm text-[var(--nx-muted)]">{t('auth.signupSubtitle')}</p>
 							</motion.div>
 
-							<form onSubmit={onSubmit} className="mt-6 space-y-4">
+							{/* GitHub signup — first in the flow */}
+							<motion.div {...field(reduced, 5)} className="mt-6">
+								<motion.button
+									type="button"
+									onClick={continueWithGithub}
+									disabled={busy}
+									whileHover={anim ? { scale: 1.01 } : undefined}
+									whileTap={anim ? { scale: 0.98 } : undefined}
+									className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
+								>
+									<GithubIcon size={16} />
+									{t('auth.continueWithGithub')}
+								</motion.button>
+								<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
+									<span className="h-px flex-1 bg-[var(--nx-border)]" />
+									or
+									<span className="h-px flex-1 bg-[var(--nx-border)]" />
+								</div>
+							</motion.div>
+
+							{/* email signup — hidden entirely in github_only mode */}
+							{signupMode !== 'github_only' && (
+							<form onSubmit={onSubmit} className="space-y-4">
 								{/* email */}
 								<motion.div {...field(reduced, 1)}>
 									<label className="block">
@@ -163,8 +212,9 @@ export default function Signup() {
 									</motion.button>
 								</motion.div>
 							</form>
+							)}
 
-							<motion.p {...field(reduced, 5)} className="mt-5 text-center text-xs text-[var(--nx-muted)]">
+							<motion.p {...field(reduced, 6)} className="mt-5 text-center text-xs text-[var(--nx-muted)]">
 								{t('auth.haveAccount')}{' '}
 								<Link to="/login" className="font-medium text-cyan-400 transition-colors hover:text-cyan-300">
 									{t('nav.login')}
