@@ -87,7 +87,7 @@ export default {
 				return await handleChat(request, 'gemini', decodeURIComponent(geminiMatch[1]), wantsStream);
 			}
 			if (url.pathname === '/v1/models' && request.method === 'GET') {
-				return await listModels();
+				return await listModels(request);
 			}
 
 			return json({ error: { type: 'not_found', message: `No route for ${url.pathname}` } }, 404);
@@ -366,17 +366,29 @@ async function forwardToProvider(
 }
 
 // ---------- /v1/models ----------
-async function listModels(): Promise<Response> {
-	const rows = await postgrestQuery<Array<{ upstream_model_id: string; context_window: number | null; display_name: string }>>(
-		'models?enabled_for_users=eq.true&select=upstream_model_id,context_window,display_name',
+async function listModels(request: Request): Promise<Response> {
+	// Authenticate like chat: an AI agent listing models must only see the
+	// models included in its plan (plan_models), not the whole enabled catalog.
+	const auth = await authenticate(request);
+	if (!auth.ok) {
+		return json({ error: { type: auth.code, message: auth.message } }, auth.status);
+	}
+
+	const enabled = await postgrestQuery<Array<{ id: string; upstream_model_id: string; context_window: number | null; display_name: string }>>(
+		'models?enabled_for_users=eq.true&select=id,upstream_model_id,context_window,display_name',
 	);
-	const data = (rows ?? []).map((m) => ({
-		id: m.upstream_model_id,
-		object: 'model',
-		owned_by: m.upstream_model_id.split('/')[0] ?? 'nexor',
-		context_length: m.context_window ?? undefined,
-		display_name: m.display_name,
-	}));
+	// plan gating: allowed_models is the plan's model list; empty = no
+	// restriction, so every enabled model is listed.
+	const allowed = auth.ctx.allowed_models ?? [];
+	const data = (enabled ?? [])
+		.filter((m) => !allowed.length || allowed.includes(m.id))
+		.map((m) => ({
+			id: m.upstream_model_id,
+			object: 'model',
+			owned_by: m.upstream_model_id.split('/')[0] ?? 'nexor',
+			context_length: m.context_window ?? undefined,
+			display_name: m.display_name,
+		}));
 	return Response.json({ object: 'list', data });
 }
 
