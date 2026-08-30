@@ -27,7 +27,7 @@ export default function PlansBrowser() {
 	const locale = i18n.language;
 	const [plans, setPlans] = useState<PlanPublic[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string }>>([]);
+	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string; display_name: string }>>([]);
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
 	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string; priceUsd: number; renew: boolean } | null>(null);
@@ -58,7 +58,7 @@ export default function PlansBrowser() {
 
 			const [{ data: plansData }, { data: modelsData }, { data: pmData }, { data: gwData }] = await Promise.all([
 				plansQuery,
-				supabase.from('models').select('id,upstream_model_id').eq('enabled_for_users', true),
+				supabase.from('models').select('id,upstream_model_id,display_name').eq('enabled_for_users', true),
 				supabase.from('plan_models').select('plan_id,model_id'),
 				supabase.from('payment_gateways').select('egp_rate').eq('gateway', 'kashier').maybeSingle(),
 			]);
@@ -105,7 +105,9 @@ export default function PlansBrowser() {
 									.slice(0, 4)
 									.map((m) => (
 										<span key={m.id} className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-[11px]">
-											{m.upstream_model_id.length > 24 ? m.upstream_model_id.slice(0, 22) + '…' : m.upstream_model_id}
+											{(m.display_name || m.upstream_model_id).length > 24
+												? (m.display_name || m.upstream_model_id).slice(0, 22) + '…'
+												: (m.display_name || m.upstream_model_id)}
 										</span>
 									))}
 							</div>

@@ -24,7 +24,7 @@ const LOCALES = ['en', 'ar', 'fr', 'zh'] as const;
 export default function AdminPlans() {
 	const [email, setEmail] = useState('');
 	const [plans, setPlans] = useState<PlanRow[]>([]);
-	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string }>>([]);
+	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string; display_name: string }>>([]);
 	const [editing, setEditing] = useState<PlanRow | 'new' | null>(null);
 	const [deleting, setDeleting] = useState<PlanRow | null>(null);
 	const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export default function AdminPlans() {
 		setEmail(user?.email ?? '');
 		const [{ data: plansData }, { data: modelsData }] = await Promise.all([
 			supabase.from('plans').select('*, plan_models(model_id)').order('price_usd'),
-			supabase.from('models').select('id,upstream_model_id').eq('enabled_for_users', true).order('upstream_model_id'),
+			supabase.from('models').select('id,upstream_model_id,display_name').eq('enabled_for_users', true).order('upstream_model_id'),
 		]);
 		setPlans(
 			(plansData ?? []).map((p: PlanRow & { plan_models?: Array<{ model_id: string }> | null }) => ({
@@ -144,7 +144,7 @@ export default function AdminPlans() {
 	);
 }
 
-function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string; upstream_model_id: string }>; onClose: () => void }) {
+function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string; upstream_model_id: string; display_name: string }>; onClose: () => void }) {
 	const p = props.initial;
 	const [name, setName] = useState<Record<string, string>>(p?.name ?? { en: '', ar: '', fr: '', zh: '' });
 	const [description, setDescription] = useState<Record<string, string>>(p?.description ?? { en: '', ar: '', fr: '', zh: '' });
@@ -276,7 +276,7 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 									<span className={`grid size-4 shrink-0 place-items-center rounded border ${selected.has(m.id) ? 'border-cyan-500 bg-cyan-600 text-white' : 'border-[var(--nx-border)]'}`}>
 										{selected.has(m.id) && <Check size={11} />}
 									</span>
-									<span className="truncate">{m.upstream_model_id}</span>
+									<span className="truncate">{m.display_name || m.upstream_model_id}</span>
 								</button>
 							))}
 						</div>
