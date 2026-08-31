@@ -73,7 +73,22 @@ export default {
 		}
 
 		try {
-			if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
+			// CORS preflight — browser-hosted agents (Cline, web UIs) send OPTIONS
+		// before every call; a 404 here surfaces as an opaque "repeated tool
+		// call failures" instead of a real answer.
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				status: 204,
+				headers: {
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+					'Access-Control-Allow-Headers': 'authorization, x-api-key, x-goog-api-key, content-type, anthropic-version',
+					'Access-Control-Max-Age': '86400',
+				},
+			});
+		}
+
+		if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
 				return await handleChat(request, 'openai');
 			}
 			if (url.pathname === '/v1/messages' && request.method === 'POST') {
@@ -91,8 +106,7 @@ export default {
 			}
 
 			return json({ error: { type: 'not_found', message: `No route for ${url.pathname}` } }, 404);
-		} catch (err) {
-			console.error('gateway error', err);
+		} catch (err) {			console.error('gateway error', err);
 			// release any quota reservation stranded by this failure
 			const pending = takeReservation();
 			if (pending) {
