@@ -71,7 +71,7 @@ export function fromOpenAI(body: Record<string, unknown>): NeutralRequest {
 				? body.max_completion_tokens
 				: typeof body.max_tokens === 'number'
 					? body.max_tokens
-					: 1024,
+					: 0,
 		temperature: body.temperature as number | undefined,
 		top_p: body.top_p as number | undefined,
 		stream: Boolean(body.stream),
@@ -182,7 +182,8 @@ export function fromAnthropic(body: Record<string, unknown>): NeutralRequest {
 		}
 	}
 
-	const maxTokens = typeof body.max_tokens === 'number' ? body.max_tokens : 1024;
+	// 0 = client didn't specify → forward without max_tokens (see toOpenAI)
+	const maxTokens = typeof body.max_tokens === 'number' ? body.max_tokens : 0;
 	const tools = (body.tools as Array<Record<string, unknown>> | undefined)?.map((t) => ({
 		type: 'function' as const,
 		function: {
@@ -205,14 +206,21 @@ export function fromAnthropic(body: Record<string, unknown>): NeutralRequest {
 	};
 }
 
-/** OpenAI accepts the neutral shape directly (it IS the OpenAI wire). */
+/**
+ * OpenAI accepts the neutral shape directly (it IS the OpenAI wire).
+ * max_tokens: agents (Cline, Cursor…) frequently omit it; sending a small
+ * default starves reasoning models mid-turn (finish_reason=length →
+ * "Model reached the maximum output token limit"). When the client
+ * didn't specify one, omit the field entirely and let the provider use
+ * its own default — which scales with the model.
+ */
 export function toOpenAI(req: NeutralRequest): Record<string, unknown> {
 	const out: Record<string, unknown> = {
 		model: req.model,
 		messages: req.messages,
-		max_tokens: req.max_tokens,
 		stream: req.stream,
 	};
+	if (req.max_tokens > 0) out.max_tokens = req.max_tokens;
 	if (req.temperature != null) out.temperature = req.temperature;
 	if (req.top_p != null) out.top_p = req.top_p;
 	if (req.tools?.length) out.tools = req.tools;
@@ -261,9 +269,11 @@ export function toAnthropic(req: NeutralRequest): Record<string, unknown> {
 
 	const out: Record<string, unknown> = {
 		model: req.model,
-		max_tokens: req.max_tokens,
 		messages: msgs,
 	};
+	// Anthropic REQUIRES max_tokens — when the client omitted it, use a sane
+	// large default instead of a starvation-inducing small one.
+	out.max_tokens = req.max_tokens > 0 ? req.max_tokens : 32768;
 	if (system) out.system = system;
 	if (req.temperature != null) out.temperature = Math.max(0, Math.min(1, req.temperature));
 	if (req.top_p != null) out.top_p = req.top_p;
@@ -359,7 +369,7 @@ export function fromGemini(body: Record<string, unknown>, modelFromPath?: string
 		messages: msgs,
 		system,
 		max_tokens:
-			((body.generationConfig as Record<string, unknown>)?.maxOutputTokens as number | undefined) ?? 1024,
+			((body.generationConfig as Record<string, unknown>)?.maxOutputTokens as number | undefined) ?? 0,
 		temperature: (body.generationConfig as Record<string, unknown>)?.temperature as number | undefined,
 		top_p: (body.generationConfig as Record<string, unknown>)?.topP as number | undefined,
 		stream: false, // overridden from URL verb by the caller
@@ -417,7 +427,8 @@ export function toGemini(req: NeutralRequest): Record<string, unknown> {
 	const out: Record<string, unknown> = {
 		contents,
 		generationConfig: {
-			maxOutputTokens: req.max_tokens,
+			// 0 = client omitted max tokens → omit the field, provider default applies
+			...(req.max_tokens > 0 ? { maxOutputTokens: req.max_tokens } : {}),
 			...(req.temperature != null ? { temperature: req.temperature } : {}),
 			...(req.top_p != null ? { topP: req.top_p } : {}),
 			...(req.stop?.length ? { stopSequences: req.stop } : {}),
