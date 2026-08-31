@@ -156,6 +156,24 @@ export default function Dashboard() {
 					</Card>
 				</div>
 
+				{/* Total token usage for the selected range */}
+				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+					<Card title="Total requests">
+						<p className="text-xl font-semibold tabular-nums">{total.requests.toLocaleString()}</p>
+					</Card>
+					<Card title="Tokens in">
+						<p className="text-xl font-semibold tabular-nums">{total.tokens_in.toLocaleString()}</p>
+					</Card>
+					<Card title="Tokens out">
+						<p className="text-xl font-semibold tabular-nums">{total.tokens_out.toLocaleString()}</p>
+					</Card>
+					<Card title="Total tokens (in + out)">
+						<p className="text-xl font-semibold tabular-nums text-cyan-300">
+							{(total.tokens_in + total.tokens_out).toLocaleString()}
+						</p>
+					</Card>
+				</div>
+
 				{/* Model usage */}
 				<section className="space-y-4">
 					<div className="flex flex-wrap items-center justify-between gap-3">
