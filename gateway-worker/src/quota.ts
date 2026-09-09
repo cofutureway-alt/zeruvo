@@ -33,18 +33,13 @@ export type ReserveResult =
 	| { ok: false; status: number; code: string; message: string };
 
 /**
- * Tracks the currently in-flight reservation per isolate so the outer
- * error handler can release it if an unexpected exception fires after
- * reserve() but before settle().
+ * NOTE: there is intentionally NO module-level "active reservation" slot.
+ * A previous single-slot design let concurrent requests on the same
+ * isolate clobber each other, so the stranded-reservation safety net
+ * settled (or stranded) the WRONG request's reservation. The reservation
+ * now lives only in the request's own closure — index.ts settles it via
+ * settleAfter(reservation, …) or the local error handler.
  */
-let activeReservation: Reservation | null = null;
-export function trackReservation(r: Reservation) { activeReservation = r; }
-export function clearReservation() { activeReservation = null; }
-export function takeReservation(): Reservation | null {
-	const r = activeReservation;
-	activeReservation = null;
-	return r;
-}
 
 export async function reserve(
 	userId: string,
@@ -68,9 +63,7 @@ export async function reserve(
 			p_user_id: userId,
 			p_estimate_weighted: estimate,
 		});
-		const reservation = { user_id: userId, reserved_amount: estimate, multiplier };
-		trackReservation(reservation);
-		return { ok: true, reservation };
+		return { ok: true, reservation: { user_id: userId, reserved_amount: estimate, multiplier } };
 	} catch (err) {
 		if (err instanceof RpcError && err.body.includes('QUOTA_EXCEEDED')) {
 			return {

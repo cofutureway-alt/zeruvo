@@ -9,7 +9,7 @@
  */
 import { setEnv } from './db';
 import { authenticate } from './auth';
-import { estimateTokens, reserve, settle, takeReservation, clearReservation } from './quota';
+import { estimateTokens, reserve, settle, type Reservation } from './quota';
 import {
 	fromOpenAI,
 	fromAnthropic,
@@ -26,7 +26,7 @@ import {
 	pickWeighted,
 	markDead,
 } from './keys';
-import { pipeProviderStream, errorFrame, type Wire, type Usage } from './stream';
+import { pipeProviderStream, aggregateProviderStream, type StreamOutcome, type Wire, type Usage } from './stream';
 
 export interface Env {
 	SUPABASE_URL: string;
@@ -49,22 +49,14 @@ import { setEnv as setEnvDb, postgrestRpc } from './db';
 
 // module-level env passthrough (set once per isolate in fetch())
 let _env: Env | null = null;
-let _execCtx: ExecutionContext | null = null;
 function envNow(): Env {
 	if (!_env) throw new Error('env not set');
 	return _env;
 }
 
-/** Keep async settlement alive after the response is returned. */
-export function keepAlive(promise: Promise<unknown>): void {
-	if (_execCtx) _execCtx.waitUntil(promise);
-	else promise.catch((e) => console.error('post-response task failed', e));
-}
-
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		_env = env;
-		_execCtx = ctx;
 		setEnvDb(env);
 		const url = new URL(request.url);
 
@@ -89,49 +81,65 @@ export default {
 		}
 
 		if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
-				return await handleChat(request, 'openai');
-			}
-			if (url.pathname === '/v1/messages' && request.method === 'POST') {
-				return await handleChat(request, 'anthropic');
-			}
-			const geminiMatch = url.pathname.match(/^\/v1beta\/models\/([^:]+):(generateContent|streamGenerateContent)$/);
-			if (geminiMatch && request.method === 'POST') {
-				const wantsStream =
-					geminiMatch[2] === 'streamGenerateContent' ||
-					url.searchParams.get('alt') === 'sse';
-				return await handleChat(request, 'gemini', decodeURIComponent(geminiMatch[1]), wantsStream);
-			}
-			if (url.pathname === '/v1/models' && request.method === 'GET') {
-				return await listModels(request);
-			}
-
-			return json({ error: { type: 'not_found', message: `No route for ${url.pathname}` } }, 404);
-		} catch (err) {			console.error('gateway error', err);
-			// release any quota reservation stranded by this failure
-			const pending = takeReservation();
-			if (pending) {
-				await settleAfter({ ok: true as const, reservation: pending }, 0, {
-					error_code: 'internal_error',
-					status: 500,
-				}).catch((e) => console.error('release failed', e));
-			}
-			return json(
-				{ error: { type: 'gateway_error', message: 'Internal gateway error' } },
-				500,
-			);
+			return await handleChat(request, 'openai', ctx);
 		}
+		if (url.pathname === '/v1/messages' && request.method === 'POST') {
+			return await handleChat(request, 'anthropic', ctx);
+		}
+		const geminiMatch = url.pathname.match(/^\/v1beta\/models\/([^:]+):(generateContent|streamGenerateContent)$/);
+		if (geminiMatch && request.method === 'POST') {
+			const wantsStream =
+				geminiMatch[2] === 'streamGenerateContent' ||
+				url.searchParams.get('alt') === 'sse';
+			return await handleChat(request, 'gemini', ctx, decodeURIComponent(geminiMatch[1]), wantsStream);
+		}
+		if (url.pathname === '/v1/models' && request.method === 'GET') {
+			return await listModels(request);
+		}
+
+		return json({ error: { type: 'not_found', message: `No route for ${url.pathname}` } }, 404);
+	} catch (err) {
+		console.error('gateway error', err);
+		// Stranded-reservation release lives inside handleChat's own error
+		// handling — the reservation is that request's closure state, not
+		// module state, so nothing recoverable here.
+		return json(
+			{ error: { type: 'gateway_error', message: 'Internal gateway error' } },
+			500,
+		);
+	}
 	},
 };
 
 void postgrestRpc;
 
 // ---------- chat pipeline ----------
-async function handleChat(request: Request, clientWire: Wire, geminiModel?: string, geminiWantsStream?: boolean): Promise<Response> {
-	const auth = await authenticate(request);
-	if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
-
+async function handleChat(
+	request: Request,
+	clientWire: Wire,
+	ctx: ExecutionContext,
+	geminiModel?: string,
+	geminiWantsStream?: boolean,
+): Promise<Response> {
+	// auth, model resolution and body-read are independent — run together
 	const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
+
+	const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
+	const [auth, resolvedArr] = await Promise.all([
+		authenticate(request),
+		postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }).catch(() => null),
+	]);
+	const resolved = resolvedArr?.[0];
+	if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
+
+	if (!resolved) {
+		return json({ error: { type: 'model_not_found', message: `Unknown model ${upstreamModel0}` } }, 404);
+	}
+	if (!resolved.enabled) {
+		return json({ error: { type: 'model_disabled', message: 'Model not available' } }, 403);
+	}
+	const multiplier = Number(resolved.usage_multiplier) || 1;
 
 	// parse the body with the adapter matching the CLIENT's wire format —
 	// Anthropic/Gemini natives carry system prompts and tool schemas in
@@ -147,18 +155,6 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 	if (clientWire === 'gemini' && geminiWantsStream) neutral.stream = true;
 	const upstreamModel = clientWire === 'gemini' ? (geminiModel ?? neutral.model) : neutral.model;
 
-	// resolve model → provider + multiplier
-	const resolved = (
-		await postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel })
-	)?.[0];
-	if (!resolved) {
-		return json({ error: { type: 'model_not_found', message: `Unknown model ${upstreamModel}` } }, 404);
-	}
-	if (!resolved.enabled) {
-		return json({ error: { type: 'model_disabled', message: 'Model not available' } }, 403);
-	}
-	const multiplier = Number(resolved.usage_multiplier) || 1;
-
 	// plan/model gating
 	const allowed = auth.ctx.allowed_models ?? [];
 	if (allowed.length && !allowed.includes(resolved.model_id)) {
@@ -169,7 +165,8 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 		return json({ error: { type: 'model_not_allowed_for_key', message: 'Key may not call this model' } }, 403);
 	}
 
-	// atomic reservation BEFORE touching the provider
+	// atomic reservation BEFORE touching the provider — run it in parallel
+	// with the key material it doesn't depend on (dek import + provider keys)
 	const maxTok =
 		clientWire === 'gemini'
 			? ((rawBody.generationConfig as { maxOutputTokens?: number })?.maxOutputTokens ?? undefined)
@@ -177,25 +174,28 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 				? rawBody.max_tokens
 				: undefined;
 	const est = estimateTokens(neutral.messages, maxTok);
-	const reservation = await reserve(
-		auth.ctx.user_id,
-		multiplier,
-		est.inputEstimate,
-		est.outputEstimate,
-		auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
-	);
+	const [reservation, dek, providerKeys] = await Promise.all([
+		reserve(
+			auth.ctx.user_id,
+			multiplier,
+			est.inputEstimate,
+			est.outputEstimate,
+			auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
+		),
+		importDek(envNow().NEXOR_ENCRYPTION_KEY),
+		loadProviderKeys(resolved.provider_id),
+	]);
 	if (!reservation.ok) {
 		return json({ error: { type: reservation.code, message: reservation.message } }, reservation.status);
 	}
+	const resv = reservation.reservation;
 
-	// provider keys + weighted selection with one retry on dead/rotatable errors
-	const dek = await importDek(envNow().NEXOR_ENCRYPTION_KEY);
 	let lastError: Response | null = null;
 	let noKeysHit = false;
 	const startedAt = Date.now();
 
 	for (let attempt = 0; attempt < 2; attempt++) {
-		const keys = await loadProviderKeys(resolved.provider_id);
+		const keys = attempt === 0 ? providerKeys : await loadProviderKeys(resolved.provider_id);
 		const chosen = pickWeighted(keys);
 		if (!chosen) {
 			noKeysHit = true;
@@ -204,6 +204,15 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 				keys_seen: keys.map((k) => ({ id: k.id.slice(0, 8), dead_until: k.dead_until, now_ms: Date.now() })),
 				attempt,
 			}));
+			// release the reservation — nothing will be billed
+			ctx.waitUntil(settleAfter(resv, 0, {
+				api_key_id: auth.ctx.api_key_id,
+				model_id: resolved.model_id,
+				upstream_model: upstreamModel,
+				status: 503,
+				error_code: 'no_provider_keys',
+				latency_ms: Date.now() - startedAt,
+			}).catch((e) => console.error('release failed', e)));
 			return json({ error: { type: 'no_provider_keys', message: 'Provider has no live keys' } }, 503);
 		}
 		const apiKey = await decryptProviderKey(dek, chosen.encrypted_key);
@@ -211,23 +220,74 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 		const upstreamRes = await forwardToProvider(envNow(), clientWire, resolved, neutral, rawBody, apiKey);
 		if (upstreamRes.ok) {
 			const started = Date.now();
-			const isStream = neutral.stream || clientWire === 'gemini';
+			// Gemini wire: only stream when the client actually asked to stream
+			// (plain :generateContent gets a single JSON document — piping it
+			// through the SSE reader yields an empty body).
+			const isStream = clientWire === 'gemini' ? !!geminiWantsStream : neutral.stream;
 			if (!isStream) {
-				const bodyText = await upstreamRes.res.text();
-				const usage = extractNonStreamUsage(bodyText, clientWire);
-				keepAlive(
-					settleAfter(reservation, usage, {
-						api_key_id: auth.ctx.api_key_id,
-						model_id: resolved.model_id,
-						upstream_model: upstreamModel,
-						status: upstreamRes.res.status,
-						latency_ms: Date.now() - started,
-					}),
+				// stream:false client — NEVER buffer the raw non-stream response:
+				// the worker would send zero bytes for the whole generation and
+				// Cloudflare kills it with 524 once the context grows. Ask the
+				// upstream to stream, aggregate frames, and respond immediately
+				// with whitespace padding so the connection stays alive.
+				let streamed: { body: ReadableStream<Uint8Array>; outcome: Promise<StreamOutcome> };
+				if (clientWire === 'gemini') {
+					// gemini non-stream upstream returns one JSON doc; just buffer
+					// it (it has no SSE framing) — same 524 risk, but gemini native
+					// clients on this gateway are rare and always stream via alt=sse
+					const bodyText = await upstreamRes.res.text();
+					const usage = extractNonStreamUsage(bodyText, clientWire);
+					ctx.waitUntil(
+						settleAfter(resv, usage.input + usage.output, {
+							api_key_id: auth.ctx.api_key_id,
+							model_id: resolved.model_id,
+							upstream_model: upstreamModel,
+							status: upstreamRes.res.status,
+							latency_ms: Date.now() - started,
+						}).catch((e) => console.error('settle failed', e)),
+					);
+					return applyUpstreamHeaders(upstreamRes.res, bodyText);
+				}
+				// re-issue the request as streaming
+				const streamNeutral = { ...neutral, stream: true };
+				const retry = await forwardToProvider(envNow(), clientWire, resolved, streamNeutral, rawBody, apiKey, true);
+				if (retry.ok) {
+					streamed = aggregateProviderStream(retry.res, clientWire);
+				} else {
+					return applyUpstreamHeaders(retry.res, await retry.res.text(), true);
+				}
+				ctx.waitUntil(
+					streamed.outcome.then((o) => {
+						const usage = o.usage;
+						const rawBill = usage
+							? usage.input + usage.output
+							: est.inputEstimate + Math.ceil(o.streamedBytes / 4);
+						return settleAfter(resv, rawBill, {
+							api_key_id: auth.ctx.api_key_id,
+							model_id: resolved.model_id,
+							upstream_model: upstreamModel,
+							status: o.sniffedError?.status ?? 200,
+							error_code: o.sniffedError
+								? 'upstream_stream_error'
+								: o.timedOut
+									? 'gateway_timeout'
+									: o.aborted
+										? 'upstream_disconnected'
+										: !usage
+											? 'usage_unreported'
+											: null,
+							tokens_out_measured: usage ? undefined : Math.ceil(o.streamedBytes / 4),
+							latency_ms: Date.now() - started,
+						});
+					}).catch((e) => console.error('settle failed', e)),
 				);
-				return applyUpstreamHeaders(upstreamRes.res, bodyText);
+				return new Response(streamed.body, {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				});
 			}
 			const { body, outcome } = pipeProviderStream(upstreamRes.res, clientWire);
-			keepAlive(
+			ctx.waitUntil(
 				outcome.then((o) => {
 					// Settlement policy (anti-quota-burn):
 					//  1. provider reported usage -> bill actual tokens
@@ -239,7 +299,7 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 					const rawBill = usage
 						? usage.input + usage.output
 						: est.inputEstimate + Math.ceil(o.streamedBytes / 4);
-					return settleAfter(reservation, rawBill, {
+					return settleAfter(resv, rawBill, {
 						api_key_id: auth.ctx.api_key_id,
 						model_id: resolved.model_id,
 						upstream_model: upstreamModel,
@@ -248,13 +308,15 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 							? 'upstream_stream_error'
 							: o.timedOut
 								? 'gateway_timeout'
-								: !usage && neutral.stream
-									? 'usage_unreported'
-									: null,
+								: o.aborted
+									? 'upstream_disconnected'
+									: !usage && neutral.stream
+										? 'usage_unreported'
+										: null,
 						tokens_out_measured: usage ? undefined : Math.ceil(o.streamedBytes / 4),
 						latency_ms: Date.now() - started,
 					});
-				}),
+				}).catch((e) => console.error('settle failed', e)),
 			);
 			return new Response(body, {
 				status: 200,
@@ -271,6 +333,14 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 			// provider-side rate limit (e.g. free model saturated) — do NOT
 			// kill the key; rotate once and if that fails surface a clean 429
 			if (attempt === 0) continue;
+			ctx.waitUntil(settleAfter(resv, 0, {
+				api_key_id: auth.ctx.api_key_id,
+				model_id: resolved.model_id,
+				upstream_model: upstreamModel,
+				status: 429,
+				error_code: 'provider_rate_limited',
+				latency_ms: Date.now() - startedAt,
+			}).catch((e) => console.error('release failed', e)));
 			return json(
 				{
 					error: {
@@ -288,7 +358,7 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 	// reservation and bill nothing. Previously this path stranded the
 	// reserved amount against the user's quota for the rest of the day.
 	const allKeysDead = !noKeysHit && lastError && [401, 402, 403].includes(lastError.status);
-	await settleAfter(reservation, 0, {
+	await settleAfter(resv, 0, {
 		api_key_id: auth.ctx.api_key_id,
 		model_id: resolved.model_id,
 		upstream_model: upstreamModel,
@@ -299,7 +369,7 @@ async function handleChat(request: Request, clientWire: Wire, geminiModel?: stri
 				? 'provider_keys_rejected'
 				: 'upstream_failed',
 		latency_ms: Date.now() - startedAt,
-	});
+	}).catch((e) => console.error('release failed', e));
 	if (allKeysDead) {
 		return json(
 			{
@@ -322,7 +392,11 @@ async function forwardToProvider(
 	neutral: NeutralRequest,
 	rawBody: Record<string, unknown>,
 	apiKey: string,
+	forceStream = false,
 ): Promise<{ ok: true; res: Response } | { ok: false; res: Response }> {
+	// forceStream: the non-stream path re-issues as streaming so the worker
+	// can respond to the client immediately (see aggregateProviderStream)
+	const effective = forceStream ? { ...neutral, stream: true } : neutral;
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	let payload: Record<string, unknown>;
 	let endpoint: string;
@@ -332,12 +406,12 @@ async function forwardToProvider(
 	if (wire === 'anthropic') {
 		headers['x-api-key'] = apiKey;
 		headers['anthropic-version'] = rawBody['anthropic-version'] as string ?? '2023-06-01';
-		payload = toAnthropic(neutral);
+		payload = toAnthropic(effective);
 		endpoint = 'https://api.anthropic.com/v1/messages';
 	} else if (wire === 'gemini') {
 		endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${neutral.model}:generateContent`;
-		payload = toGemini(neutral);
-		if (neutral.stream) {
+		payload = toGemini(effective);
+		if (effective.stream) {
 			endpoint += '?alt=sse';
 		}
 		endpoint += (endpoint.includes('?') ? '&' : '?') + `key=${apiKey}`;
@@ -349,7 +423,7 @@ async function forwardToProvider(
 			headers['HTTP-Referer'] = 'https://zeruvo.online';
 			headers['X-Title'] = 'Zeruvo AI';
 		}
-		payload = toOpenAI(neutral);
+		payload = toOpenAI(effective);
 		// ask the provider to include usage in the final stream chunk,
 		// otherwise streaming settlement would fall back to estimates
 		if ((payload as { stream?: boolean }).stream) {
@@ -459,7 +533,7 @@ function extractNonStreamUsage(bodyText: string, wire: Wire): Usage {
 }
 
 async function settleAfter(
-	reservation: Awaited<ReturnType<typeof reserve>> & { ok: true },
+	resv: Reservation,
 	usage: Usage | number,
 	logExtra: Record<string, unknown>,
 ): Promise<void> {
@@ -467,8 +541,7 @@ async function settleAfter(
 		const raw = typeof usage === 'number'
 			? usage
 			: Math.max(usage.input + usage.output - (usage.cacheRead ?? 0), 1);
-		clearReservation(); // reservation no longer in flight
-		await settle(reservation.reservation, raw, {
+		await settle(resv, raw, {
 			...logExtra,
 			tokens_in: typeof usage === 'object' ? usage.input : 0,
 			tokens_out: typeof usage === 'object' ? usage.output : 0,
