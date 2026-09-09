@@ -243,6 +243,9 @@ async function handleChat(
 							model_id: resolved.model_id,
 							upstream_model: upstreamModel,
 							status: upstreamRes.res.status,
+							tokens_in: usage.input,
+							tokens_out: usage.output,
+							cache_read_tokens: usage.cacheRead ?? 0,
 							latency_ms: Date.now() - started,
 						}).catch((e) => console.error('settle failed', e)),
 					);
@@ -276,7 +279,9 @@ async function handleChat(
 										: !usage
 											? 'usage_unreported'
 											: null,
-							tokens_out_measured: usage ? undefined : Math.ceil(o.streamedBytes / 4),
+							tokens_in: usage?.input ?? 0,
+							tokens_out: usage?.output ?? Math.ceil(o.streamedBytes / 4),
+							cache_read_tokens: usage?.cacheRead ?? 0,
 							latency_ms: Date.now() - started,
 						});
 					}).catch((e) => console.error('settle failed', e)),
@@ -313,7 +318,9 @@ async function handleChat(
 									: !usage && neutral.stream
 										? 'usage_unreported'
 										: null,
-						tokens_out_measured: usage ? undefined : Math.ceil(o.streamedBytes / 4),
+						tokens_in: usage?.input ?? 0,
+						tokens_out: usage?.output ?? Math.ceil(o.streamedBytes / 4),
+						cache_read_tokens: usage?.cacheRead ?? 0,
 						latency_ms: Date.now() - started,
 					});
 				}).catch((e) => console.error('settle failed', e)),
@@ -534,18 +541,17 @@ function extractNonStreamUsage(bodyText: string, wire: Wire): Usage {
 
 async function settleAfter(
 	resv: Reservation,
-	usage: Usage | number,
+	rawBill: number,
 	logExtra: Record<string, unknown>,
 ): Promise<void> {
 	try {
-		const raw = typeof usage === 'number'
-			? usage
-			: Math.max(usage.input + usage.output - (usage.cacheRead ?? 0), 1);
-		await settle(resv, raw, {
+		await settle(resv, rawBill, {
 			...logExtra,
-			tokens_in: typeof usage === 'object' ? usage.input : 0,
-			tokens_out: typeof usage === 'object' ? usage.output : 0,
-			cache_read_tokens: typeof usage === 'object' ? (usage.cacheRead ?? 0) : 0,
+			// callers always provide tokens_in/tokens_out/cache_read_tokens in
+			// logExtra — default to 0 only if omitted
+			tokens_in: logExtra.tokens_in ?? 0,
+			tokens_out: logExtra.tokens_out ?? 0,
+			cache_read_tokens: logExtra.cache_read_tokens ?? 0,
 		});
 	} catch (err) {
 		console.error('settle failed', err);
