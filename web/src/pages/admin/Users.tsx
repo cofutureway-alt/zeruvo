@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
 	Search, Ban, Undo2, Trash2, KeyRound, MailX, ArrowRightLeft,
-	ShieldCheck, ShieldOff, Loader2, X,
+	ShieldCheck, ShieldOff, Loader2, X, BarChart3,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
 import { edgeCall } from '../../lib/admin-api';
 import { ConfirmModal } from './Providers';
+import { UserUsageModal } from './UserUsageModal';
 
 interface UserRow {
 	id: string;
@@ -18,6 +19,8 @@ interface UserRow {
 	sub: { plan_name: string; plan_id: string; expires_at: string } | null;
 }
 
+export type { UserRow };
+
 export default function Users() {
 	const [email, setEmail] = useState('');
 	const [users, setUsers] = useState<UserRow[]>([]);
@@ -25,6 +28,7 @@ export default function Users() {
 	const [query, setQuery] = useState('');
 	const [plans, setPlans] = useState<Array<{ id: string; name: Record<string, string> }>>([]);
 	const [managing, setManaging] = useState<UserRow | null>(null);
+	const [statsFor, setStatsFor] = useState<UserRow | null>(null);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -135,6 +139,14 @@ export default function Users() {
 									</p>
 								</div>
 								<button
+									onClick={() => setStatsFor(u)}
+									className="flex items-center gap-1.5 rounded-lg border border-[var(--nx-border)] px-3 py-2 text-xs text-[var(--nx-muted)] transition hover:border-cyan-500/60 hover:text-cyan-300"
+									title="Usage statistics"
+								>
+									<BarChart3 size={13} />
+									Stats
+								</button>
+								<button
 									onClick={() => setManaging(u)}
 									className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-medium text-white hover:bg-cyan-500"
 								>
@@ -149,6 +161,9 @@ export default function Users() {
 				)}
 			</div>
 
+			{statsFor && (
+				<UserUsageModal user={statsFor} onClose={() => setStatsFor(null)} />
+			)}
 			{managing && (
 				<UserManagerModal
 					user={managing}
