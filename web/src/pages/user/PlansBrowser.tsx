@@ -75,50 +75,50 @@ export default function PlansBrowser() {
 	return (
 		<>
 			{loading ? <SkeletonPlans count={3} /> : (
-		<div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+		<div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
 				{plans.map((p) => {
 					const isCurrent = p.id === currentPlanId;
 					const ids = planModels[p.id] ?? [];
 					return (
 						<article
 							key={p.id}
-							className={`relative rounded-xl border bg-[var(--nx-surface)] p-5 ${isCurrent ? 'border-cyan-500' : 'border-[var(--nx-border)]'}`}
+							className={`hover-lift relative flex flex-col rounded-xl border bg-card p-6 transition-colors ${isCurrent ? 'border-primary/60' : 'border-border hover:border-primary/50'}`}
 						>
 							{p.default_free && (
-								<span className="absolute -top-2.5 end-4 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-400">
+								<span className="absolute -top-2.5 end-4 rounded bg-primary/15 px-2 py-1 text-[11px] text-primary">
 									Starter free
 								</span>
 							)}
-							<h3 className="font-medium">{p.name[locale] ?? p.name.en}</h3>
-							<p className="mt-0.5 min-h-8 text-xs text-[var(--nx-muted)]">{p.description[locale] ?? p.description.en ?? ''}</p>
-							<div className="mt-3 flex items-baseline gap-1">
-								<span className="text-3xl font-semibold tabular-nums">{p.is_free ? '$0' : `$${Number(p.price_usd).toFixed(0)}`}</span>
-								<span className="text-xs text-[var(--nx-muted)]">/ {p.duration_count} {p.duration_unit}</span>
+							<h3 className="font-display text-xl font-semibold">{p.name[locale] ?? p.name.en}</h3>
+							<p className="mt-1 min-h-8 text-sm text-muted-foreground">{p.description[locale] ?? p.description.en ?? ''}</p>
+							<div className="mt-5 flex items-baseline gap-2">
+								<span className="font-display text-4xl font-semibold tabular-nums">{p.is_free ? '$0' : `$${Number(p.price_usd).toFixed(0)}`}</span>
+								<span className="text-sm text-muted-foreground">/ {p.duration_count} {p.duration_unit}</span>
 							</div>
-							<p className="mt-2 text-sm tabular-nums">
-								<span className="font-medium">{Number(p.daily_weighted_tokens).toLocaleString()}</span>{' '}
-								<span className="text-xs text-[var(--nx-muted)]">weighted tokens / day</span>
+							<p className="mt-2 text-sm">
+								<span className="font-medium text-primary">{Number(p.daily_weighted_tokens).toLocaleString()}</span>{' '}
+								<span className="text-muted-foreground">weighted tokens / day</span>
 							</p>
 							<div className="mt-3 flex flex-wrap gap-1.5">
 								{models
 									.filter((m) => ids.includes(m.id))
 									.slice(0, 4)
 									.map((m) => (
-										<span key={m.id} className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-[11px]">
+										<span key={m.id} className="rounded bg-accent px-2 py-0.5 text-[11px] text-accent-foreground">
 											{(m.display_name || m.upstream_model_id).length > 24
 												? (m.display_name || m.upstream_model_id).slice(0, 22) + '…'
 												: (m.display_name || m.upstream_model_id)}
 										</span>
 									))}
 							</div>
-							{ids.length > 4 && <p className="mt-1.5 text-[11px] text-[var(--nx-muted)]">+{ids.length - 4} more</p>}
+							{ids.length > 4 && <p className="mt-1.5 text-[11px] text-muted-foreground">+{ids.length - 4} more</p>}
 							<button
 								disabled={isCurrent && !(p.renewable && Number(p.price_usd) > 0)}
 								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en, priceUsd: Number(p.price_usd), renew: isCurrent })}
-								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition ${
+								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 ${
 									isCurrent && !(p.renewable && Number(p.price_usd) > 0)
-										? 'cursor-default border border-cyan-500/50 text-cyan-400'
-										: 'bg-cyan-600 text-white hover:bg-cyan-500'
+										? 'cursor-default border border-primary/50 text-primary'
+										: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
 								}`}
 							>
 								{isCurrent && !(p.renewable && Number(p.price_usd) > 0) ? (
@@ -238,16 +238,16 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 
 	return (
 		<div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
-			<div className="flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
-				<header className="flex items-center justify-between border-b border-[var(--nx-border)] px-5 py-3.5">
+			<div className="flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+				<header className="flex items-center justify-between border-b border-border px-5 py-3.5">
 					<div>
 						<p className="text-sm font-medium">{props.renew ? 'Renew' : 'Subscribe'} — {props.planName}</p>
-						<p className="flex items-center gap-1 text-[11px] text-[var(--nx-muted)]">
+						<p className="flex items-center gap-1 text-[11px] text-muted-foreground">
 							<ShieldCheck size={11} />
 							Secured by Kashier · 1 USD ≈ {props.egpRate} EGP
 						</p>
 					</div>
-					<button onClick={props.onClose} className="rounded-lg p-1.5 text-[var(--nx-muted)] hover:bg-zinc-800/60">
+					<button onClick={props.onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-zinc-800/60">
 						<X size={18} />
 					</button>
 				</header>
@@ -255,18 +255,18 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 				{step === 'coupon' ? (
 					<div className="space-y-5 p-6">
 						{/* summary */}
-						<div className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-bg-raised)] p-4 text-sm">
+						<div className="rounded-xl border border-border bg-accent/40 p-4 text-sm">
 							<Row label="Plan price" value={`$${props.priceUsd.toFixed(2)} → ${Math.round(props.priceUsd * props.egpRate).toLocaleString()} EGP`} />
 							{discountPct > 0 && (
 								<Row label={`Discount (${discountPct}%)`} value={`−$${discountUsd.toFixed(2)}`} accent />
 							)}
-							<div className="my-2 border-t border-[var(--nx-border)]" />
+							<div className="my-2 border-t border-border" />
 							<Row label="You pay" value={`${finalEgp.toLocaleString()} EGP`} bold />
 						</div>
 
 						{/* coupon input */}
 						<div>
-							<label className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--nx-muted)]">
+							<label className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 								<Ticket size={12} />
 								Coupon code
 							</label>
@@ -276,25 +276,25 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 									onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
 									onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
 									placeholder="e.g. LAUNCH20"
-									className="min-w-0 flex-1 rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-cyan-500"
+									className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-primary"
 								/>
 								<button
 									onClick={applyCoupon}
 									disabled={checkingCoupon || !couponCode.trim()}
-									className="flex shrink-0 items-center gap-1.5 rounded-lg border border-cyan-500/50 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-40"
+									className="flex shrink-0 items-center gap-1.5 rounded-lg border border-primary/50 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
 								>
 									{checkingCoupon ? <Loader2 size={14} className="animate-spin" /> : <Tag size={14} />}
 									Apply
 								</button>
 							</div>
 							{couponMsg && (
-								<p className={`mt-2 text-xs ${couponMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{couponMsg.text}</p>
+								<p className={`mt-2 text-xs ${couponMsg.ok ? 'text-success' : 'text-red-400'}`}>{couponMsg.text}</p>
 							)}
 						</div>
 
 						<button
 							onClick={proceedToPay}
-							className="w-full rounded-xl bg-cyan-600 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(6,182,212,0.25)] transition hover:bg-cyan-500"
+							className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90"
 						>
 							Continue to payment — {finalEgp.toLocaleString()} EGP
 						</button>
@@ -307,7 +307,7 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 					<iframe src={iframeUrl} title="Kashier secure checkout" className="min-h-0 flex-1 w-full border-0" allow="payment" />
 				) : (
 					<div className="grid place-items-center py-16">
-						<Loader2 className="animate-spin text-cyan-400" size={28} />
+						<Loader2 className="animate-spin text-primary" size={28} />
 					</div>
 				)}
 			</div>
@@ -318,8 +318,8 @@ function CheckoutModal(props: { planId: string; planName: string; priceUsd: numb
 function Row(props: { label: string; value: string; bold?: boolean; accent?: boolean }) {
 	return (
 		<div className="flex items-center justify-between">
-			<span className={props.accent ? 'text-emerald-400' : 'text-[var(--nx-muted)]'}>{props.label}</span>
-			<span className={`tabular-nums ${props.bold ? 'font-semibold' : ''} ${props.accent ? 'text-emerald-400' : ''}`}>
+			<span className={props.accent ? 'text-success' : 'text-muted-foreground'}>{props.label}</span>
+			<span className={`tabular-nums ${props.bold ? 'font-semibold' : ''} ${props.accent ? 'text-success' : ''}`}>
 				{props.value}
 			</span>
 		</div>

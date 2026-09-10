@@ -6,11 +6,11 @@ import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
 import { AuthProvider } from './auth-context';
 import { ProtectedRoute, AdminRoute, GuestRoute, PendingRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
-import Home from './pages/marketing/Home';
-import Models from './pages/marketing/Models';
+import Home from './pages/marketing/HomeNew';
+import Models from './pages/marketing/ModelsNew';
 import ModelDetail from './pages/marketing/ModelDetail';
-import Pricing from './pages/marketing/Pricing';
-import Docs from './pages/marketing/Docs';
+import Pricing from './pages/marketing/PricingNew';
+import Docs from './pages/marketing/DocsNew';
 import Privacy from './pages/marketing/Privacy';
 import Refund from './pages/marketing/Refund';
 import Login from './pages/auth/Login';
@@ -79,8 +79,7 @@ function App() {
 						}
 					/>
 
-					<Route element={<AppLayout />}>
-					{/* marketing */}
+					{/* marketing — standalone with new-design chrome */}
 					<Route path="/" element={<Home />} />
 					<Route path="/models" element={<Models />} />
 					<Route path="/models/:slug" element={<ModelDetail />} />
@@ -88,6 +87,8 @@ function App() {
 					<Route path="/docs" element={<Docs />} />
 					<Route path="/privacy" element={<Privacy />} />
 					<Route path="/refund" element={<Refund />} />
+					{/* user dashboard + admin keep the console layout */}
+					<Route element={<AppLayout />}>
 					{/* user dashboard */}
 					<Route
 						path="/dashboard"
@@ -230,9 +231,10 @@ function App() {
 							</AdminRoute>
 						}
 					/>
-				</Route>
-				<Route path="*" element={<NotFound />} />
-			</Routes>
+					</Route>
+					{/* end console layout */}
+					<Route path="*" element={<NotFound />} />
+				</Routes>
 			</AuthProvider>
 		</BrowserRouter>
 	);
