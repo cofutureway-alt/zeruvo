@@ -25,6 +25,7 @@ export function CountUp({
     const node = ref.current;
     if (!node) return;
 
+    let raf = 0;
     const run = () => {
       if (started.current) return;
       started.current = true;
@@ -33,10 +34,15 @@ export function CountUp({
         const p = Math.min((now - start) / duration, 1);
         const eased = 1 - Math.pow(1 - p, 3);
         setValue(end * eased);
-        if (p < 1) requestAnimationFrame(tick);
+        if (p < 1) raf = requestAnimationFrame(tick);
       };
-      requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tick);
     };
+
+    if (!("IntersectionObserver" in window)) {
+      run();
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -51,7 +57,13 @@ export function CountUp({
     );
 
     observer.observe(node);
-    return () => observer.disconnect();
+    // safety net: never leave the counter stuck at 0 (headless previews, etc.)
+    const fallback = window.setTimeout(run, 2500);
+    return () => {
+      window.clearTimeout(fallback);
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [end, duration]);
 
   return (

@@ -129,13 +129,7 @@
 .spotlight-card:hover { border-color: var(--nx-border-bright); transform: translateY(-2px); }
 .spotlight-card:hover::before { opacity: 1; }
 
-/* CountUp handled in JS; fade-slide-in utility */
-.reveal {
-	opacity: 0;
-	transform: translateY(16px);
-	transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.reveal.in-view { opacity: 1; transform: none; }
+/* CountUp handled in JS; fade-slide-in lives in design-system/styles.css now */
 
 /* Signal dot — live status pulse */
 .signal-dot { position: relative; display: inline-grid; place-items: center; }
@@ -186,8 +180,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.split-word, .shiny-text, .signal-dot::after, .reveal { animation: none !important; transition: none !important; }
-	.split-word, .reveal { opacity: 1 !important; transform: none !important; }
+	.split-word, .shiny-text, .signal-dot::after { animation: none !important; transition: none !important; }
+	.reveal { opacity: 1 !important; transform: none !important; }
 }
 
 /* ---- auth page aurora backdrop ---- */

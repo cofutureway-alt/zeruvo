@@ -7,14 +7,25 @@ type RevealProps = {
   as?: ElementType;
 };
 
+/**
+ * Scroll-reveal with robust fallbacks:
+ *  - starts visible when IntersectionObserver is unavailable (SSR / 0×0 viewports)
+ *  - a timeout forces visibility after 2.5s even if the observer never fires
+ *    (headless previews, quirky embeds) — content is never left invisible
+ */
 export function Reveal({ children, className = "", delay = 0, as }: RevealProps) {
   const Tag = (as ?? "div") as ElementType;
   const ref = useRef<HTMLElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(
+    () => typeof window === "undefined" || !("IntersectionObserver" in window),
+  );
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+
+    // safety net: never leave content hidden
+    const fallback = window.setTimeout(() => setVisible(true), 2500);
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -29,7 +40,10 @@ export function Reveal({ children, className = "", delay = 0, as }: RevealProps)
     );
 
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      window.clearTimeout(fallback);
+      observer.disconnect();
+    };
   }, []);
 
   return (
