@@ -29,7 +29,7 @@ interface ModelLite {
 	display_name: string;
 	slug: string;
 	usage_multiplier: number | string;
-	providers?: { display_name: string } | null;
+	model_categories: { name: string } | null;
 }
 
 const features = [
@@ -65,25 +65,30 @@ const features = [
 	},
 ];
 
-const PROVIDER_NAMES = ['OpenAI', 'Anthropic', 'Google', 'DeepSeek', 'MoonShot', 'Qwen', 'Mistral', 'xAI'];
+/* Public brand marquee — famous AI companies, never our upstream providers. */
+const BRAND_NAMES = ['OpenAI', 'Anthropic', 'Google', 'DeepSeek', 'Moonshot AI', 'Qwen', 'Mistral', 'xAI', 'Perplexity', 'Meta'];
 
 export default function Home() {
 	const { t, i18n } = useTranslation();
 	const { user } = useAuth();
 	const [models, setModels] = useState<ModelLite[]>([]);
-	const [providerNames, setProviderNames] = useState<string[]>(PROVIDER_NAMES);
 
 	useEffect(() => {
 		void (async () => {
 			const { data } = await supabase
 				.from('models')
-				.select('id,upstream_model_id,display_name,slug,usage_multiplier,providers(display_name)')
+				.select('id,upstream_model_id,display_name,slug,usage_multiplier,model_categories(name)')
 				.eq('enabled_for_users', true)
 				.order('upstream_model_id');
-			const rows = (data ?? []) as unknown as ModelLite[];
+			const rows = ((data ?? []) as Array<Record<string, unknown>>).map((m) => ({
+				id: String(m.id),
+				upstream_model_id: String(m.upstream_model_id),
+				display_name: String(m.display_name),
+				slug: String(m.slug),
+				usage_multiplier: Number(m.usage_multiplier ?? 1),
+				model_categories: (m.model_categories as { name: string } | null) ?? null,
+			}));
 			setModels(rows);
-			const names = [...new Set(rows.map((m) => m.providers?.display_name).filter(Boolean))] as string[];
-			if (names.length) setProviderNames(names.slice(0, 10));
 		})();
 	}, []);
 
@@ -171,11 +176,11 @@ export default function Home() {
 					<div className="mx-auto max-w-7xl">
 						<Reveal>
 							<p className="mb-8 text-center font-display text-sm font-medium uppercase tracking-wider text-muted-foreground">
-								{i18n.language === 'ar' ? 'التوجيه إلى المزودين' : 'Routing to upstream providers'}
+								{i18n.language === 'ar' ? 'أسماء كبرى الذكاء الاصطناعي' : 'The biggest names in AI'}
 							</p>
 						</Reveal>
 						<Marquee
-							items={providerNames.map((name) => (
+							items={BRAND_NAMES.map((name) => (
 								<span
 									key={name}
 									className="inline-flex items-center gap-3 font-display text-xl font-semibold text-muted-foreground/70 transition-colors duration-300 hover:text-foreground"
@@ -195,7 +200,7 @@ export default function Home() {
 							{ end: 99.9, decimals: 1, suffix: '%', label: i18n.language === 'ar' ? 'جهوزية البوابة' : 'Gateway uptime' },
 							{ end: Math.max(totalModels, 0), suffix: '', label: i18n.language === 'ar' ? 'موديل متاح الآن' : 'Models live now' },
 							{ end: 42, suffix: 'ms', label: i18n.language === 'ar' ? 'زمن التوجيه' : 'Routing overhead' },
-							{ end: providerNames.length, suffix: '+', label: i18n.language === 'ar' ? 'مزودو الخدمة' : 'Upstream providers' },
+							{ end: 3, suffix: '', label: i18n.language === 'ar' ? 'بروتوكولات أصلية' : 'Native protocols' },
 						].map((stat, index) => (
 							<Reveal key={stat.label} delay={index * 100}>
 								<div className="text-center">
@@ -294,8 +299,8 @@ export default function Home() {
 												</div>
 												<p className="mt-2 truncate font-mono text-xs text-muted-foreground">{model.upstream_model_id}</p>
 												<p className="mt-4 inline-flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-													<ProviderMark name={model.providers?.display_name ?? ''} className="h-4 w-4" />
-													{model.providers?.display_name ?? '—'}
+													<ProviderMark name={model.model_categories?.name ?? ''} className="h-4 w-4" />
+													{model.model_categories?.name ?? 'AI Models'}
 												</p>
 											</CardContent>
 										</Card>

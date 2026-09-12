@@ -3,24 +3,24 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Legacy "Routing Room" tokens — kept ONLY for the console pages
-   that have not been migrated to the new design system yet.
-   Body colors now come from the design-system (light + dark).
+   Legacy "nx-*" tokens — now ALIASES of the new design system so
+   console/marketing surfaces that still reference them follow the
+   light/dark theme automatically.
    ============================================================ */
 :root {
-	--nx-bg: #060a0e;
-	--nx-bg-raised: #0b1118;
-	--nx-surface: #0e1520;
-	--nx-surface-2: #141e2a;
-	--nx-border: #1c2a3a;
-	--nx-border-bright: #2a3e52;
-	--nx-text: #e8edf4;
-	--nx-muted: #7e8ea0;
-	--nx-accent: #06b6d4;
-	--nx-accent-strong: #22d3ee;
-	--nx-mint: #10b981;
-	--nx-danger: #ff6473;
-	--nx-amber: #ffc46b;
+	--nx-bg: var(--background);
+	--nx-bg-raised: var(--muted);
+	--nx-surface: var(--card);
+	--nx-surface-2: var(--accent);
+	--nx-border: var(--border);
+	--nx-border-bright: color-mix(in oklab, var(--border) 55%, var(--foreground) 18%);
+	--nx-text: var(--foreground);
+	--nx-muted: var(--muted-foreground);
+	--nx-accent: var(--primary);
+	--nx-accent-strong: var(--primary);
+	--nx-mint: var(--success);
+	--nx-danger: var(--destructive);
+	--nx-amber: var(--warning);
 
 	--font-display: 'Space Grotesk', 'IBM Plex Sans Arabic', sans-serif;
 	--font-body: 'Inter', 'IBM Plex Sans Arabic', sans-serif;

@@ -107,7 +107,7 @@ export function NetworkField() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
             </span>
-            24 providers online
+            3 protocols · global mesh
           </span>
         </div>
       </div>

@@ -10,8 +10,9 @@ import { Input } from '../../design-system/input';
 import { Card, CardContent } from '../../design-system/card';
 
 /**
- * New-design model catalog. Live Supabase data: enabled models + categories
- * as provider filter chips, weighted multipliers, search + sort.
+ * New-design model catalog. Live Supabase data: enabled models + admin
+ * categories as filter chips, weighted multipliers, search + sort.
+ * Upstream provider names are never shown to the public.
  */
 interface ModelRow {
 	id: string;
@@ -19,23 +20,23 @@ interface ModelRow {
 	upstream_model_id: string;
 	display_name: string;
 	usage_multiplier: number;
-	provider_name: string;
+	category_name: string;
 }
 
 export default function Models() {
 	const { t, i18n } = useTranslation();
 	const [models, setModels] = useState<ModelRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [providers, setProviders] = useState<string[]>([]);
+	const [categories, setCategories] = useState<string[]>([]);
 	const [query, setQuery] = useState('');
-	const [provider, setProvider] = useState('All');
+	const [category, setCategory] = useState('All');
 	const [sort, setSort] = useState<'name' | 'multiplier'>('name');
 
 	useEffect(() => {
 		void (async () => {
 			const { data } = await supabase
 				.from('models')
-				.select('id,slug,upstream_model_id,display_name,usage_multiplier,providers(display_name)')
+				.select('id,slug,upstream_model_id,display_name,usage_multiplier,model_categories(name)')
 				.eq('enabled_for_users', true)
 				.order('upstream_model_id');
 			const rows = ((data ?? []) as Array<Record<string, unknown>>).map((m) => ({
@@ -44,10 +45,10 @@ export default function Models() {
 				upstream_model_id: String(m.upstream_model_id),
 				display_name: String(m.display_name),
 				usage_multiplier: Number(m.usage_multiplier ?? 1),
-				provider_name: String((m.providers as { display_name?: string } | null)?.display_name ?? 'Others'),
+				category_name: String((m.model_categories as { name?: string } | null)?.name ?? 'Others'),
 			}));
 			setModels(rows);
-			setProviders([...new Set(rows.map((r) => r.provider_name))]);
+			setCategories([...new Set(rows.map((r) => r.category_name))]);
 			setLoading(false);
 		})();
 	}, []);
@@ -56,13 +57,13 @@ export default function Models() {
 		const list = models.filter((m) => {
 			const q = query.toLowerCase();
 			const matchesQuery = !q || m.display_name.toLowerCase().includes(q) || m.upstream_model_id.toLowerCase().includes(q);
-			const matchesProvider = provider === 'All' || m.provider_name === provider;
+			const matchesProvider = category === 'All' || m.category_name === category;
 			return matchesQuery && matchesProvider;
 		});
 		return [...list].sort((a, b) =>
 			sort === 'name' ? a.display_name.localeCompare(b.display_name) : b.usage_multiplier - a.usage_multiplier,
 		);
-	}, [models, query, provider, sort]);
+	}, [models, query, category, sort]);
 
 	return (
 		<div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -97,13 +98,13 @@ export default function Models() {
 							</div>
 
 							<div className="flex flex-wrap items-center gap-2">
-								{['All', ...providers].map((p) => (
+								{['All', ...categories].map((p) => (
 									<button
 										key={p}
 										type="button"
-										onClick={() => setProvider(p)}
+										onClick={() => setCategory(p)}
 										className={`rounded-full border px-4 py-1.5 text-sm transition-all duration-300 hover:-translate-y-0.5 ${
-											provider === p
+											category === p
 												? 'border-primary bg-primary text-primary-foreground'
 												: 'border-border bg-card text-muted-foreground hover:text-foreground'
 										}`}
@@ -145,8 +146,8 @@ export default function Models() {
 											</div>
 											<p className="mt-1 truncate font-mono text-xs text-muted-foreground">{model.upstream_model_id}</p>
 											<p className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
-												<ProviderMark name={model.provider_name} className="h-4 w-4" />
-												{model.provider_name}
+												<ProviderMark name={model.category_name} className="h-4 w-4" />
+												{model.category_name}
 											</p>
 										</CardContent>
 									</Card>

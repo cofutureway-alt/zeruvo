@@ -19,8 +19,10 @@ import {
 	PanelLeftOpen,
 	Menu,
 	X,
+	Server,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ThemeToggle } from '../design-system/theme-toggle';
 
 type NavItem = {
 	to: string;
@@ -51,7 +53,8 @@ const adminNav: NavItem[] = [
 ];
 
 /**
- * Console shell used by both dashboards.
+ * Console shell used by both dashboards — new design (workspace card,
+ * primary-tinted active nav, system status, theme toggle, mobile drawer).
  * variant="user" shows the user nav; variant="admin" the admin nav
  * (routes are already guarded in main.tsx).
  */
@@ -79,8 +82,17 @@ export function DashboardShell({
 		return () => window.removeEventListener('nexor-marquee-count', onCount);
 	}, []);
 
+	// close the drawer when the viewport grows to desktop size
+	useEffect(() => {
+		const mq = window.matchMedia('(min-width: 1024px)');
+		const onChange = (e: MediaQueryListEvent) => e.matches && setMobileOpen(false);
+		mq.addEventListener('change', onChange);
+		return () => mq.removeEventListener('change', onChange);
+	}, []);
+
 	const marqueeOffset = marqueeCount * 36;
 	const nav = variant === 'user' ? userNav : adminNav;
+	const initials = (email.slice(0, 2) || 'ZA').toUpperCase();
 
 	async function logout() {
 		await supabase.auth.signOut();
@@ -94,23 +106,24 @@ export function DashboardShell({
 	}
 
 	return (
-		<div className="flex min-h-dvh bg-[var(--nx-bg)]">
+		<div className="console-root flex min-h-dvh bg-background text-foreground">
 			{/* mobile top bar — offset below any announcement marquee bars */}
 			<div
-				className="fixed inset-x-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--nx-border)] bg-[var(--nx-surface)] px-4 lg:hidden"
+				className="fixed inset-x-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-xl lg:hidden"
 				style={{ top: marqueeOffset }}
 			>
-				<button
-					onClick={() => setMobileOpen(true)}
-					className="grid size-9 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
-					aria-label="Open menu"
-				>
-					<Menu size={20} />
-				</button>
-				<div className="flex items-center gap-2">
+				<div className="flex min-w-0 items-center gap-2">
+					<button
+						onClick={() => setMobileOpen(true)}
+						className="grid size-9 shrink-0 place-items-center rounded-md border border-input bg-background/70 text-foreground transition-colors hover:bg-accent"
+						aria-label="Open menu"
+					>
+						<Menu size={18} />
+					</button>
 					<img src="/icon.png" alt="" className="size-7 shrink-0 rounded-full object-contain" />
-					<span className="text-sm font-semibold tracking-tight">Zeruvo AI</span>
+					<span className="truncate font-display text-sm font-semibold tracking-tight">Zeruvo AI</span>
 				</div>
+				<ThemeToggle />
 			</div>
 
 			{/* mobile drawer overlay */}
@@ -122,43 +135,63 @@ export function DashboardShell({
 			)}
 
 			<aside
-				className={`fixed inset-y-0 start-0 z-50 flex w-64 shrink-0 flex-col border-e border-[var(--nx-border)] bg-[var(--nx-surface)] transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
+				className={`fixed inset-y-0 start-0 z-50 flex w-72 shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 lg:bg-sidebar/90 ${
 					!mobileOpen ? 'max-lg:ltr:-translate-x-full max-lg:rtl:translate-x-full' : ''
-				} ${collapsed ? 'lg:w-[68px]' : 'lg:w-64'}`}
+				} ${collapsed ? 'lg:w-[76px]' : 'lg:w-64'}`}
 				style={{ top: marqueeOffset }}
 			>
-				<div className="flex h-16 items-center gap-2.5 border-b border-[var(--nx-border)] px-4">
+				{/* brand */}
+				<div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-4">
 					<button
 						onClick={() => setMobileOpen(false)}
-						className="rounded-lg p-1 text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100 lg:hidden"
+						className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden"
 						aria-label="Close menu"
 					>
 						<X size={18} />
 					</button>
-					<img src="/icon.png" alt="" className="size-8 shrink-0 rounded-full object-contain" />
-					<div className={`min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
-							<p className="truncate text-sm font-semibold tracking-tight">Zeruvo AI</p>
-							<p className="truncate text-[11px] text-[var(--nx-muted)]">
+					<Link to="/" className={`flex min-w-0 items-center gap-2 ${collapsed ? 'lg:hidden' : ''}`}>
+						<Server size={20} className="shrink-0 text-primary" />
+						<span className="min-w-0">
+							<span className="block truncate font-display text-sm font-semibold">Zeruvo AI</span>
+							<span className="block truncate text-[11px] text-muted-foreground">
 								{variant === 'admin' ? 'Admin Console' : 'Console'}
-							</p>
-						</div>
+							</span>
+						</span>
+					</Link>
 				</div>
 
-				<nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
+				{/* workspace chip */}
+				<div className={`mx-3 mt-4 flex items-center gap-3 rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-3 ${collapsed ? 'lg:hidden' : ''}`}>
+					<span className="relative flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+						{initials}
+						<span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-sidebar bg-success" />
+					</span>
+					<span className="min-w-0 flex-1">
+						<span className="block truncate text-xs font-semibold">{email || '—'}</span>
+						<span className="block truncate text-[11px] text-muted-foreground">
+							{variant === 'admin' ? 'Administrator' : 'Workspace'}
+						</span>
+					</span>
+				</div>
+
+				<p className={`px-6 pb-2 pt-5 font-display text-[10px] font-semibold uppercase text-muted-foreground ${collapsed ? 'lg:hidden' : ''}`}>
+					{variant === 'admin' ? 'Management' : 'Workspace'}
+				</p>
+				<nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3">
 					{nav.map(({ to, label, labelKey, Icon }) => (
 						<Link
 							key={to}
 							to={to}
 							onClick={() => setMobileOpen(false)}
 							title={collapsed ? String(label ?? t(`dashboard.${labelKey}`)) : undefined}
-							className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+							className={`relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-200 ${
 								isActive(to)
-									? 'bg-cyan-500/10 font-medium text-cyan-400'
-									: 'text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100'
-							}`}
+									? 'bg-primary/10 font-semibold text-primary'
+									: 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+							} ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}
 						>
 							{isActive(to) && (
-								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-cyan-400" />
+								<span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary" />
 							)}
 							<Icon size={17} className="shrink-0" />
 							<span className={`truncate ${collapsed ? 'lg:hidden' : ''}`}>{label ?? t(`dashboard.${labelKey}`)}</span>
@@ -166,27 +199,39 @@ export function DashboardShell({
 					))}
 				</nav>
 
-				<div className={`border-t border-[var(--nx-border)] p-2.5 ${collapsed ? 'lg:px-2.5' : ''}`}>
+				{/* system status */}
+				<div className={`mx-3 mb-3 rounded-lg border border-sidebar-border bg-sidebar-accent/30 p-3 ${collapsed ? 'lg:hidden' : ''}`}>
+					<div className="flex items-center justify-between text-[11px]">
+						<span className="font-semibold text-foreground">System status</span>
+						<span className="text-success">Operational</span>
+					</div>
+					<div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+						<div className="h-full w-[99%] rounded-full bg-primary" />
+					</div>
+				</div>
+
+				{/* footer actions */}
+				<div className="flex flex-col gap-1 border-t border-sidebar-border p-3">
 					<Link
 						to={variant === 'admin' ? '/dashboard' : '/admin'}
 						onClick={() => setMobileOpen(false)}
-						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+						className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}
 					>
 						<ShieldCheck size={17} className="shrink-0" />
 						<span className={`${collapsed ? 'lg:hidden' : ''}`}>{variant === 'admin' ? 'User view' : 'Admin'}</span>
 					</Link>
 					<button
 						onClick={() => { setMobileOpen(false); void logout(); }}
-						className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100"
+						className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}
 					>
 						<LogOut size={17} className="shrink-0" />
 						<span className={`${collapsed ? 'lg:hidden' : ''}`}>{t('common.logout')}</span>
 					</button>
-					<div className="mt-1 flex items-center justify-between gap-2 border-t border-[var(--nx-border)] pt-2.5">
-						<span className={`min-w-0 truncate px-2 text-[11px] text-[var(--nx-muted)] ${collapsed ? 'lg:hidden' : ''}`}>{email}</span>
+					<div className={`mt-1 flex items-center justify-between gap-2 border-t border-sidebar-border pt-2.5 ${collapsed ? 'lg:justify-center' : ''}`}>
+						<span className={`min-w-0 truncate px-2 text-[11px] text-muted-foreground ${collapsed ? 'lg:hidden' : ''}`}>{email}</span>
 						<button
 							onClick={() => setCollapsed((c) => !c)}
-							className="hidden size-8 shrink-0 place-items-center rounded-lg text-[var(--nx-muted)] hover:bg-zinc-800/50 hover:text-zinc-100 lg:grid"
+							className="hidden size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground lg:grid"
 							aria-label="Toggle sidebar"
 						>
 							{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
@@ -195,7 +240,10 @@ export function DashboardShell({
 				</div>
 			</aside>
 
-			<main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8 lg:pt-8" style={{ paddingTop: `calc(3.5rem + ${marqueeOffset + 16}px)` }}>
+			<main
+				className="console-content min-w-0 flex-1 p-4 sm:p-6 lg:p-8"
+				style={{ paddingTop: `calc(3.5rem + ${marqueeOffset + 16}px)` }}
+			>
 				{children ?? <Outlet />}
 			</main>
 		</div>

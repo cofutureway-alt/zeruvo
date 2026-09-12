@@ -14,7 +14,7 @@ interface ModelFull {
 	upstream_model_id: string;
 	context_window: number | null;
 	usage_multiplier: number | string;
-	providers: Array<{ display_name: string }> | null;
+	
 	model_categories: Array<{ name: string }> | null;
 }
 
@@ -30,7 +30,7 @@ export default function ModelDetail() {
 		void (async () => {
 			const { data } = await supabase
 				.from('models')
-				.select('display_name,description,upstream_model_id,context_window,usage_multiplier,providers(display_name),model_categories(name)')
+				.select('display_name,description,upstream_model_id,context_window,usage_multiplier,model_categories(name)')
 				.eq('slug', slug)
 				.eq('enabled_for_users', true)
 				.maybeSingle();
@@ -94,10 +94,10 @@ export default function ModelDetail() {
 
 				<Reveal delay={100}>
 					<dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-						<Spec label={ar ? 'المزود' : 'Provider'} value={model.providers?.[0]?.display_name ?? '—'} mark={model.providers?.[0]?.display_name ?? ''} />
+						<Spec label={ar ? 'الفئة' : 'Category'} value={model.model_categories?.[0]?.name ?? 'AI Models'} mark={model.model_categories?.[0]?.name ?? ''} />
 						<Spec label={ar ? 'السياق' : 'Context'} value={model.context_window ? `${(model.context_window / 1024).toFixed(0)}K tokens` : '—'} />
 						<Spec label={ar ? 'المعامل' : 'Multiplier'} value={`×${mult}`} />
-						<Spec label={ar ? 'التصنيف' : 'Category'} value={model.model_categories?.[0]?.name ?? '—'} />
+						
 					</dl>
 				</Reveal>
 
