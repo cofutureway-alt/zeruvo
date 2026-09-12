@@ -16,6 +16,7 @@ interface PlanRow {
 	default_free: boolean;
 	active: boolean;
 	renewable: boolean;
+	popular: boolean;
 	plan_models?: Array<{ model_id: string }>;
 }
 
@@ -89,6 +90,7 @@ export default function AdminPlans() {
 									<p className="truncate text-xs text-[var(--nx-muted)]">{p.description?.en ?? ''}</p>
 								</div>
 								<div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+									{p.popular && <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-400">popular</span>}
 									{p.default_free && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-400">default free</span>}
 									{!p.active && <span className="rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] text-zinc-400">hidden</span>}
 									{!p.renewable && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400">renewal off</span>}
@@ -155,6 +157,7 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 	const [isFree, setIsFree] = useState(p?.is_free ?? false);
 	const [isDefault, setIsDefault] = useState(p?.default_free ?? false);
 	const [renewable, setRenewable] = useState(p?.renewable ?? true);
+	const [popular, setPopular] = useState(p?.popular ?? false);
 	const [selected, setSelected] = useState<Set<string>>(new Set((p?.plan_models ?? []).map((pm) => pm.model_id)));
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -175,12 +178,19 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 			default_free: isFree && isDefault,
 			active: p?.active ?? true,
 			renewable,
+			popular,
 		};
 
 		let planId = p?.id;
 		if (planId) {
 			if (isDefault) {
 				const { error: e } = await supabase.from('plans').update({ default_free: false }).neq('id', planId);
+				if (e) { setError(e.message); setBusy(false); return; }
+			}
+			// "Most popular" is a single-slot marketing badge — clear it on
+			// every other plan before highlighting this one.
+			if (popular) {
+				const { error: e } = await supabase.from('plans').update({ popular: false }).neq('id', planId);
 				if (e) { setError(e.message); setBusy(false); return; }
 			}
 			const { error: e } = await supabase.from('plans').update(row).eq('id', planId);
@@ -190,6 +200,10 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 		} else {
 			if (isDefault) {
 				const { error: e } = await supabase.from('plans').update({ default_free: false }).eq('default_free', true);
+				if (e) { setError(e.message); setBusy(false); return; }
+			}
+			if (popular) {
+				const { error: e } = await supabase.from('plans').update({ popular: false }).eq('popular', true);
 				if (e) { setError(e.message); setBusy(false); return; }
 			}
 			const { data, error: e } = await supabase.from('plans').insert(row).select().single();
@@ -265,6 +279,10 @@ function PlanEditor(props: { initial: PlanRow | null; models: Array<{ id: string
 						<label className="flex items-center gap-2 text-sm">
 							<input type="checkbox" checked={renewable} onChange={(e) => setRenewable(e.target.checked)} />
 							Allow renewal for current subscribers
+						</label>
+						<label className="flex items-center gap-2 text-sm">
+							<input type="checkbox" checked={popular} onChange={(e) => setPopular(e.target.checked)} />
+							Highlight as "Most popular" on pricing
 						</label>
 					</div>
 

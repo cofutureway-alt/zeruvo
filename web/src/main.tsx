@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './index.css';
 import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
+import { ThemeProvider } from './design-system/theme-provider';
 import { AuthProvider } from './auth-context';
 import { ProtectedRoute, AdminRoute, GuestRoute, PendingRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
@@ -50,6 +51,7 @@ function App() {
 		<BrowserRouter>
 			<Root />
 			<AuthProvider>
+			<ThemeProvider>
 			<Routes>
 				{/* auth pages — standalone, no AppLayout (aurora background fills viewport) */}
 				<Route
@@ -235,6 +237,7 @@ function App() {
 					{/* end console layout */}
 					<Route path="*" element={<NotFound />} />
 				</Routes>
+			</ThemeProvider>
 			</AuthProvider>
 		</BrowserRouter>
 	);

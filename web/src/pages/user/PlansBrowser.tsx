@@ -1,8 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Check, ArrowUpRight, X, Loader2, ShieldCheck, Ticket, Tag, RotateCw } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { Check, ArrowUpRight, X, Loader2, ShieldCheck, Ticket, Tag, RotateCw, Boxes, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { SkeletonPlans } from '../../components/skeleton';
+import { Reveal } from '../../design-system/reveal';
+import { Card, CardContent } from '../../design-system/card';
+import { Button } from '../../design-system/button';
+import { ProviderMark } from '../../design-system/brand-marks';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../design-system/dialog';
+import { Input } from '../../design-system/input';
+import { ScrollArea } from '../../design-system/scroll-area';
 
 interface PlanPublic {
 	id: string;
@@ -15,6 +22,15 @@ interface PlanPublic {
 	is_free: boolean;
 	default_free: boolean;
 	renewable: boolean;
+	popular: boolean;
+}
+
+interface CatalogModel {
+	id: string;
+	upstream_model_id: string;
+	display_name: string;
+	usage_multiplier: number | string;
+	category_name: string;
 }
 
 /**
@@ -27,11 +43,13 @@ export default function PlansBrowser() {
 	const locale = i18n.language;
 	const [plans, setPlans] = useState<PlanPublic[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [models, setModels] = useState<Array<{ id: string; upstream_model_id: string; display_name: string }>>([]);
+	const [models, setModels] = useState<CatalogModel[]>([]);
 	const [planModels, setPlanModels] = useState<Record<string, string[]>>({});
 	const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
 	const [checkoutFor, setCheckoutFor] = useState<{ id: string; name: string; priceUsd: number; renew: boolean } | null>(null);
 	const [egpRate, setEgpRate] = useState(50);
+	const [dialogPlan, setDialogPlan] = useState<PlanPublic | null>(null);
+	const [modelsOpen, setModelsOpen] = useState(false);
 
 	useEffect(() => {
 		void (async () => {
@@ -58,14 +76,23 @@ export default function PlansBrowser() {
 
 			const [{ data: plansData }, { data: modelsData }, { data: pmData }, { data: gwData }] = await Promise.all([
 				plansQuery,
-				supabase.from('models').select('id,upstream_model_id,display_name').eq('enabled_for_users', true),
+				supabase.from('models')
+					.select('id,upstream_model_id,display_name,usage_multiplier,model_categories(name)')
+					.eq('enabled_for_users', true),
 				supabase.from('plan_models').select('plan_id,model_id'),
 				supabase.from('payment_gateways').select('egp_rate').eq('gateway', 'kashier').maybeSingle(),
 			]);
+			const catalogModels: CatalogModel[] = (modelsData ?? []).map((m: Record<string, unknown>) => ({
+				id: String(m.id),
+				upstream_model_id: String(m.upstream_model_id),
+				display_name: String(m.display_name),
+				usage_multiplier: Number(m.usage_multiplier ?? 1),
+				category_name: String((m.model_categories as { name?: string } | null)?.name ?? 'AI Models'),
+			}));
 			const grouped: Record<string, string[]> = {};
 			for (const pm of pmData ?? []) (grouped[pm.plan_id] ??= []).push(pm.model_id);
 			setPlans(plansData ?? []);
-			setModels(modelsData ?? []);
+			setModels(catalogModels);
 			setPlanModels(grouped);
 			if (gwData?.egp_rate) setEgpRate(Number(gwData.egp_rate));
 			setLoading(false);
@@ -74,73 +101,112 @@ export default function PlansBrowser() {
 
 	return (
 		<>
-			{loading ? <SkeletonPlans count={3} /> : (
-		<div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-				{plans.map((p) => {
-					const isCurrent = p.id === currentPlanId;
-					const ids = planModels[p.id] ?? [];
-					return (
-						<article
-							key={p.id}
-							className={`hover-lift relative flex flex-col rounded-xl border bg-card p-6 transition-colors ${isCurrent ? 'border-primary/60' : 'border-border hover:border-primary/50'}`}
-						>
-							{p.default_free && (
-								<span className="absolute -top-2.5 end-4 rounded bg-primary/15 px-2 py-1 text-[11px] text-primary">
-									Starter free
-								</span>
-							)}
-							<h3 className="font-display text-xl font-semibold">{p.name[locale] ?? p.name.en}</h3>
-							<p className="mt-1 min-h-8 text-sm text-muted-foreground">{p.description[locale] ?? p.description.en ?? ''}</p>
-							<div className="mt-5 flex items-baseline gap-2">
-								<span className="font-display text-4xl font-semibold tabular-nums">{p.is_free ? '$0' : `$${Number(p.price_usd).toFixed(0)}`}</span>
-								<span className="text-sm text-muted-foreground">/ {p.duration_count} {p.duration_unit}</span>
-							</div>
-							<p className="mt-2 text-sm">
-								<span className="font-medium text-primary">{Number(p.daily_weighted_tokens).toLocaleString()}</span>{' '}
-								<span className="text-muted-foreground">weighted tokens / day</span>
-							</p>
-							<div className="mt-3 flex flex-wrap gap-1.5">
-								{models
-									.filter((m) => ids.includes(m.id))
-									.slice(0, 4)
-									.map((m) => (
-										<span key={m.id} className="rounded bg-accent px-2 py-0.5 text-[11px] text-accent-foreground">
-											{(m.display_name || m.upstream_model_id).length > 24
-												? (m.display_name || m.upstream_model_id).slice(0, 22) + '…'
-												: (m.display_name || m.upstream_model_id)}
+			{loading ? (
+				<SkeletonPlans count={3} />
+			) : (
+				<div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+					{plans.map((p, index) => {
+						const isCurrent = p.id === currentPlanId;
+						const ids = planModels[p.id] ?? [];
+						const canRenew = isCurrent && p.renewable && Number(p.price_usd) > 0;
+						return (
+							<Reveal key={p.id} delay={Math.min(index, 6) * 80} className="h-full">
+								<Card
+									className={`hover-lift relative flex h-full flex-col border bg-card ${
+										p.popular
+											? 'border-primary shadow-lg shadow-primary/10'
+											: isCurrent
+												? 'border-primary/60'
+												: 'border-border hover:border-primary/50'
+									}`}
+								>
+									{p.popular ? (
+										<span className="absolute -top-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
+											<Sparkles className="h-3 w-3" aria-hidden="true" /> Most popular
 										</span>
-									))}
-							</div>
-							{ids.length > 4 && <p className="mt-1.5 text-[11px] text-muted-foreground">+{ids.length - 4} more</p>}
-							<button
-								disabled={isCurrent && !(p.renewable && Number(p.price_usd) > 0)}
-								onClick={() => setCheckoutFor({ id: p.id, name: p.name[locale] ?? p.name.en, priceUsd: Number(p.price_usd), renew: isCurrent })}
-								className={`mt-4 flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 ${
-									isCurrent && !(p.renewable && Number(p.price_usd) > 0)
-										? 'cursor-default border border-primary/50 text-primary'
-										: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
-								}`}
-							>
-								{isCurrent && !(p.renewable && Number(p.price_usd) > 0) ? (
-									<>
-										<Check size={15} /> Current plan
-									</>
-								) : isCurrent && p.renewable ? (
-									<>
-										<RotateCw size={15} /> Renew
-									</>
-								) : (
-									<>
-										<ArrowUpRight size={15} />
-										{Number(p.price_usd) > 0 ? 'Subscribe' : 'Switch to free'}
-									</>
-								)}
-							</button>
-						</article>
-					);
-				})}
-		</div>
-		)}
+									) : p.default_free ? (
+										<span className="absolute -top-3 right-4 rounded bg-primary/15 px-2 py-1 text-xs text-primary">
+											Starter free
+										</span>
+									) : null}
+									<CardContent className="flex flex-1 flex-col p-6">
+										<h3 className="font-display text-xl font-semibold">{p.name[locale] ?? p.name.en}</h3>
+										<p className="mt-1 text-sm text-muted-foreground">{p.description[locale] ?? p.description.en ?? ''}</p>
+
+										<div className="mt-5 flex items-baseline gap-2">
+											<span className="font-display text-4xl font-semibold tabular-nums">
+												{p.is_free ? '$0' : `$${Number(p.price_usd).toFixed(0)}`}
+											</span>
+											<span className="text-sm text-muted-foreground">/ {p.duration_count} {p.duration_unit}</span>
+										</div>
+										<p className="mt-2 text-sm">
+											<span className="font-medium text-primary">{Number(p.daily_weighted_tokens).toLocaleString()}</span>{' '}
+											<span className="text-muted-foreground">weighted tokens / day</span>
+										</p>
+
+										<button
+											type="button"
+											onClick={() => {
+												setDialogPlan(p);
+												setModelsOpen(true);
+											}}
+											className="group mt-5 flex w-full items-center justify-between rounded-md border border-border bg-accent/50 px-3 py-2.5 text-left text-sm transition-all duration-200 hover:border-primary/50 hover:bg-accent"
+										>
+											<span className="flex items-center gap-2">
+												<Boxes className="h-4 w-4 text-primary" aria-hidden="true" />
+												<span>
+													<span className="font-medium">{ids.length} models</span>{' '}
+													<span className="text-muted-foreground">included</span>
+												</span>
+											</span>
+											<span className="text-xs text-primary transition-transform duration-200 group-hover:translate-x-0.5">
+												{locale === 'ar' ? 'استعراض الكل ←' : 'View all →'}
+											</span>
+										</button>
+
+										<Button
+											disabled={isCurrent && !canRenew}
+											variant={isCurrent && !canRenew ? 'outline' : 'default'}
+											onClick={() =>
+												setCheckoutFor({
+													id: p.id,
+													name: p.name[locale] ?? p.name.en,
+													priceUsd: Number(p.price_usd),
+													renew: isCurrent,
+												})
+											}
+											className="mt-4 w-full gap-2 transition-transform duration-300 hover:-translate-y-0.5"
+										>
+											{isCurrent && !canRenew ? (
+												<>
+													<Check className="h-4 w-4" aria-hidden="true" /> Current plan
+												</>
+											) : canRenew ? (
+												<>
+													<RotateCw className="h-4 w-4" aria-hidden="true" /> Renew
+												</>
+											) : (
+												<>
+													<ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+													{Number(p.price_usd) > 0 ? 'Subscribe' : 'Switch to free'}
+												</>
+											)}
+										</Button>
+									</CardContent>
+								</Card>
+							</Reveal>
+						);
+					})}
+				</div>
+			)}
+
+			<PlanModelsDialog
+				plan={dialogPlan}
+				models={models}
+				planModelIds={dialogPlan ? (planModels[dialogPlan.id] ?? []) : []}
+				open={modelsOpen}
+				onOpenChange={setModelsOpen}
+			/>
 
 			{checkoutFor && (
 				<CheckoutModal
@@ -156,6 +222,107 @@ export default function PlansBrowser() {
 				/>
 			)}
 		</>
+	);
+}
+
+/**
+ * Design's "plan models" dialog: search + group by category, with the
+ * weighted multiplier badge. Upstream provider names are not exposed —
+ * grouping uses the public model categories.
+ */
+function PlanModelsDialog(props: {
+	plan: PlanPublic | null;
+	models: CatalogModel[];
+	planModelIds: string[];
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
+	const { i18n } = useTranslation();
+	const locale = i18n.language;
+	const [query, setQuery] = useState('');
+
+	const list = useMemo(
+		() => props.models.filter((m) => props.planModelIds.includes(m.id)),
+		[props.models, props.planModelIds],
+	);
+	const filtered = useMemo(() => {
+		const q = query.trim().toLowerCase();
+		if (!q) return list;
+		return list.filter(
+			(m) =>
+				m.display_name.toLowerCase().includes(q) ||
+				m.upstream_model_id.toLowerCase().includes(q) ||
+				m.category_name.toLowerCase().includes(q),
+		);
+	}, [list, query]);
+
+	const groups = useMemo(() => {
+		const map = new Map<string, CatalogModel[]>();
+		for (const m of filtered) {
+			const g = map.get(m.category_name) ?? [];
+			g.push(m);
+			map.set(m.category_name, g);
+		}
+		return [...map.entries()];
+	}, [filtered]);
+
+	return (
+		<Dialog open={props.open} onOpenChange={props.onOpenChange}>
+			<DialogContent className="max-w-lg gap-0 p-0">
+				<DialogHeader className="border-b border-border p-5">
+					<DialogTitle className="flex items-center gap-2 font-display">
+						<Boxes className="h-4 w-4 text-primary" aria-hidden="true" />
+						{props.plan ? `${props.plan.name[locale] ?? props.plan.name.en} plan models` : ''}
+					</DialogTitle>
+					<DialogDescription>
+						{list.length} models available · up to ×{Math.max(...list.map((m) => Number(m.usage_multiplier)), 0)} token weight
+					</DialogDescription>
+					<div className="relative pt-2">
+						<Search className="absolute left-3 top-1/2 mt-1 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+						<Input
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder={locale === 'ar' ? 'ابحث في الموديلات…' : 'Search models…'}
+							className="pl-9"
+						/>
+					</div>
+				</DialogHeader>
+				<ScrollArea className="max-h-[60vh]">
+					<div className="p-5 pt-3">
+						{groups.length === 0 ? (
+							<p className="py-8 text-center text-sm text-muted-foreground">
+								{locale === 'ar' ? 'لا موديلات تطابق البحث.' : 'No models match your search.'}
+							</p>
+						) : (
+							groups.map(([category, items]) => (
+								<div key={category} className="mt-4 first:mt-1">
+									<p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+										{category} · {items.length}
+									</p>
+									<div className="space-y-1">
+										{items.map((m) => (
+											<div
+												key={m.id}
+												className="flex items-center gap-3 rounded-md border border-transparent px-2 py-2 transition-colors hover:border-border hover:bg-accent"
+											>
+												<ProviderMark name={m.category_name} className="h-5 w-5 shrink-0 text-foreground" />
+												<div className="min-w-0 flex-1">
+													<p className="truncate text-sm font-medium">{m.display_name}</p>
+													<p className="truncate font-mono text-xs text-muted-foreground">{m.upstream_model_id}</p>
+												</div>
+												<span className="rounded bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+													×{Number(m.usage_multiplier)}
+												</span>
+											</div>
+										))}
+									</div>
+								</div>
+							))
+						)}
+					</div>
+				</ScrollArea>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
