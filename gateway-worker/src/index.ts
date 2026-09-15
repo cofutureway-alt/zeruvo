@@ -23,16 +23,20 @@ import {
 	importDek,
 	decryptProviderKey,
 	loadProviderKeys,
-	pickWeighted,
 	markDead,
+	type ProviderKeyRow,
 } from './keys';
-import { pipeProviderStream, aggregateProviderStream, type StreamOutcome, type Wire, type Usage } from './stream';
+import type { Wire } from './stream';
+import { startFailoverStream, type RouteRow, type FailoverDeps, type FailoverOutcome } from './failover';
 
 export interface Env {
 	SUPABASE_URL: string;
 	SUPABASE_SERVICE_ROLE_KEY: string;
 	NEXOR_ENCRYPTION_KEY: string;
 	MOCK_LLM?: Fetcher;
+	/** tunable header-wait deadlines for the failover stream (ms) */
+	GATEWAY_HEADER_WAIT_FIRST_MS?: string;
+	GATEWAY_HEADER_WAIT_LATER_MS?: string;
 }
 
 interface ModelInfo {
@@ -190,219 +194,176 @@ async function handleChat(
 	}
 	const resv = reservation.reservation;
 
-	let lastError: Response | null = null;
-	let noKeysHit = false;
+	// ---- committed: the durable failover stream owns everything after here.
+	// The client Response exists from byte 0 (no more Cloudflare 524 during
+	// the provider header wait), keep-alive frames cover the stall windows,
+	// and a provider that fails BEFORE any content flows is escaped to the
+	// next active provider row serving the same upstream model. Billing
+	// identity stays the PRIMARY row's (multiplier, model_id, plan gating).
 	const startedAt = Date.now();
-
-	for (let attempt = 0; attempt < 2; attempt++) {
-		const keys = attempt === 0 ? providerKeys : await loadProviderKeys(resolved.provider_id);
-		const chosen = pickWeighted(keys);
-		if (!chosen) {
-			noKeysHit = true;
-			console.error('NO LIVE KEYS:', JSON.stringify({
-				provider_id: resolved.provider_id,
-				keys_seen: keys.map((k) => ({ id: k.id.slice(0, 8), dead_until: k.dead_until, now_ms: Date.now() })),
-				attempt,
-			}));
-			// release the reservation — nothing will be billed
-			ctx.waitUntil(settleAfter(resv, 0, {
-				api_key_id: auth.ctx.api_key_id,
-				model_id: resolved.model_id,
-				upstream_model: upstreamModel,
-				status: 503,
-				error_code: 'no_provider_keys',
-				latency_ms: Date.now() - startedAt,
-			}).catch((e) => console.error('release failed', e)));
-			return json({ error: { type: 'no_provider_keys', message: 'Provider has no live keys' } }, 503);
-		}
-		const apiKey = await decryptProviderKey(dek, chosen.encrypted_key);
-
-		const upstreamRes = await forwardToProvider(envNow(), clientWire, resolved, neutral, rawBody, apiKey);
-		if (upstreamRes.ok) {
-			const started = Date.now();
-			// Gemini wire: only stream when the client actually asked to stream
-			// (plain :generateContent gets a single JSON document — piping it
-			// through the SSE reader yields an empty body).
-			const isStream = clientWire === 'gemini' ? !!geminiWantsStream : neutral.stream;
-			if (!isStream) {
-				// stream:false client — NEVER buffer the raw non-stream response:
-				// the worker would send zero bytes for the whole generation and
-				// Cloudflare kills it with 524 once the context grows. Ask the
-				// upstream to stream, aggregate frames, and respond immediately
-				// with whitespace padding so the connection stays alive.
-				let streamed: { body: ReadableStream<Uint8Array>; outcome: Promise<StreamOutcome> };
-				if (clientWire === 'gemini') {
-					// gemini non-stream upstream returns one JSON doc; just buffer
-					// it (it has no SSE framing) — same 524 risk, but gemini native
-					// clients on this gateway are rare and always stream via alt=sse
-					const bodyText = await upstreamRes.res.text();
-					const usage = extractNonStreamUsage(bodyText, clientWire);
-					ctx.waitUntil(
-						settleAfter(resv, usage.input + usage.output, {
-							api_key_id: auth.ctx.api_key_id,
-							model_id: resolved.model_id,
-							upstream_model: upstreamModel,
-							status: upstreamRes.res.status,
-							tokens_in: usage.input,
-							tokens_out: usage.output,
-							cache_read_tokens: usage.cacheRead ?? 0,
-							latency_ms: Date.now() - started,
-						}).catch((e) => console.error('settle failed', e)),
-					);
-					return applyUpstreamHeaders(upstreamRes.res, bodyText);
-				}
-				// re-issue the request as streaming
-				const streamNeutral = { ...neutral, stream: true };
-				const retry = await forwardToProvider(envNow(), clientWire, resolved, streamNeutral, rawBody, apiKey, true);
-				if (retry.ok) {
-					streamed = aggregateProviderStream(retry.res, clientWire);
-				} else {
-					return applyUpstreamHeaders(retry.res, await retry.res.text(), true);
-				}
-				ctx.waitUntil(
-					streamed.outcome.then((o) => {
-						const usage = o.usage;
-						const rawBill = usage
-							? usage.input + usage.output
-							: est.inputEstimate + Math.ceil(o.streamedBytes / 4);
-						return settleAfter(resv, rawBill, {
-							api_key_id: auth.ctx.api_key_id,
-							model_id: resolved.model_id,
-							upstream_model: upstreamModel,
-							status: o.sniffedError?.status ?? 200,
-							error_code: o.sniffedError
-								? 'upstream_stream_error'
-								: o.timedOut
-									? 'gateway_timeout'
-									: o.aborted
-										? 'upstream_disconnected'
-										: !usage
-											? 'usage_unreported'
-											: null,
-							tokens_in: usage?.input ?? 0,
-							tokens_out: usage?.output ?? Math.ceil(o.streamedBytes / 4),
-							cache_read_tokens: usage?.cacheRead ?? 0,
-							latency_ms: Date.now() - started,
-						});
-					}).catch((e) => console.error('settle failed', e)),
-				);
-				return new Response(streamed.body, {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-			const { body, outcome } = pipeProviderStream(upstreamRes.res, clientWire);
-			ctx.waitUntil(
-				outcome.then((o) => {
-					// Settlement policy (anti-quota-burn):
-					//  1. provider reported usage -> bill actual tokens
-					//  2. otherwise -> bill provable volume only:
-					//     measured streamed bytes / 4 as output tokens,
-					//     plus the input estimate. The speculative output
-					//     estimate is NEVER billed.
-					const usage = o.usage;
-					const rawBill = usage
-						? usage.input + usage.output
-						: est.inputEstimate + Math.ceil(o.streamedBytes / 4);
-					return settleAfter(resv, rawBill, {
-						api_key_id: auth.ctx.api_key_id,
-						model_id: resolved.model_id,
-						upstream_model: upstreamModel,
-						status: o.sniffedError?.status ?? 200,
-						error_code: o.sniffedError
-							? 'upstream_stream_error'
-							: o.timedOut
-								? 'gateway_timeout'
-								: o.aborted
-									? 'upstream_disconnected'
-									: !usage && neutral.stream
-										? 'usage_unreported'
-										: null,
-						tokens_in: usage?.input ?? 0,
-						tokens_out: usage?.output ?? Math.ceil(o.streamedBytes / 4),
-						cache_read_tokens: usage?.cacheRead ?? 0,
-						latency_ms: Date.now() - started,
-					});
-				}).catch((e) => console.error('settle failed', e)),
-			);
-			return new Response(body, {
-				status: 200,
-				headers: sseHeaders(),
-			});
-		}
-
-		lastError = upstreamRes.res;
-		if ([401, 402, 403].includes(upstreamRes.res.status)) {
-			await markDead(chosen.id, 5); // dead 5 min (was 30 — too punishing)
-			continue; // retry with another key (same reservation still held)
-		}
-		if (upstreamRes.res.status === 429) {
-			// provider-side rate limit (e.g. free model saturated) — do NOT
-			// kill the key; rotate once and if that fails surface a clean 429
-			if (attempt === 0) continue;
-			ctx.waitUntil(settleAfter(resv, 0, {
-				api_key_id: auth.ctx.api_key_id,
-				model_id: resolved.model_id,
-				upstream_model: upstreamModel,
-				status: 429,
-				error_code: 'provider_rate_limited',
-				latency_ms: Date.now() - startedAt,
-			}).catch((e) => console.error('release failed', e)));
-			return json(
-				{
-					error: {
-						type: 'provider_rate_limited',
-						message: 'Upstream provider is rate-limited for this model. Retry shortly.',
-					},
-				},
-				429,
-			);
-		}
-		break; // other errors: surface to client
-	}
-
-	// All attempts failed: nothing was streamed, so release the ENTIRE
-	// reservation and bill nothing. Previously this path stranded the
-	// reserved amount against the user's quota for the rest of the day.
-	const allKeysDead = !noKeysHit && lastError && [401, 402, 403].includes(lastError.status);
-	await settleAfter(resv, 0, {
-		api_key_id: auth.ctx.api_key_id,
+	const primaryRoute: RouteRow = {
 		model_id: resolved.model_id,
-		upstream_model: upstreamModel,
-		status: noKeysHit ? 503 : lastError!.status,
-		error_code: noKeysHit
-			? 'no_provider_keys'
-			: allKeysDead
-				? 'provider_keys_rejected'
-				: 'upstream_failed',
+		provider_id: resolved.provider_id,
+		provider_kind: resolved.provider_kind,
+		provider_base_url: resolved.provider_base_url,
+		is_primary: true,
+	};
+	const fallbacks = await fetchFallbackRoutes(upstreamModel, resolved.model_id);
+	const routes: RouteRow[] = [primaryRoute, ...fallbacks];
+
+	// one key-load per provider within this request; the primary's is warm
+	const keyCache = new Map<string, Promise<ProviderKeyRow[]>>([
+		[resolved.provider_id, Promise.resolve(providerKeys)],
+	]);
+	const deps: FailoverDeps = {
+		call: (route, apiKey, forceStream, signal) =>
+			forwardToProvider(envNow(), clientWire, route, neutral, rawBody, apiKey, forceStream, signal),
+		loadKeys: (route) => {
+			let p = keyCache.get(route.provider_id);
+			if (!p) {
+				p = loadProviderKeys(route.provider_id).catch(() => [] as ProviderKeyRow[]);
+				keyCache.set(route.provider_id, p);
+			}
+			return p;
+		},
+		decrypt: (key) => decryptProviderKey(dek, key.encrypted_key),
+		markKeyDead: (keyId) => markDead(keyId, 5),
+	};
+
+	const isStream = clientWire === 'gemini' ? !!geminiWantsStream : neutral.stream;
+	const mode = isStream ? 'sse' : clientWire === 'gemini' ? 'buffer' : 'aggregate';
+	const { body, outcome } = startFailoverStream({
+		clientWire,
+		mode,
+		routes,
+		deps,
+		headerWaitFirstMs: Number(envNow().GATEWAY_HEADER_WAIT_FIRST_MS) || undefined,
+		headerWaitLaterMs: Number(envNow().GATEWAY_HEADER_WAIT_LATER_MS) || undefined,
+	});
+
+	ctx.waitUntil(
+		outcome
+			.then((o) =>
+				settleAfter(resv, billFor(o, est, neutral.stream), {
+					api_key_id: auth.ctx.api_key_id,
+					model_id: resolved.model_id,
+					upstream_model: upstreamModel,
+					...logMeta(o, startedAt, neutral.stream, est),
+				}),
+			)
+			.catch((e) => console.error('settle failed', e)),
+	);
+
+	return new Response(body, {
+		status: 200,
+		headers: mode === 'sse' ? sseHeaders() : { 'Content-Type': 'application/json' },
+	});
+}
+
+/**
+ * Settlement policy (anti-quota-burn), unchanged from before failover:
+ *  1. total failure before any content, or client-gone with 0 bytes → 0
+ *  2. provider reported usage → actual tokens
+ *  3. otherwise → provable volume only: input estimate + streamed bytes / 4.
+ *     The speculative output estimate is NEVER billed.
+ */
+function billFor(
+	o: FailoverOutcome,
+	est: { inputEstimate: number; outputEstimate: number },
+	stream: boolean,
+): number {
+	if (o.finalError && o.streamedBytes === 0) return 0;
+	const usage = o.usage;
+	if (usage && (usage.input > 0 || usage.output > 0)) return usage.input + usage.output;
+	if (!stream && o.finalError) return 0;
+	return est.inputEstimate + Math.ceil(o.streamedBytes / 4);
+}
+
+/** request_logs fields — same status/error_code vocabulary as before failover */
+function logMeta(
+	o: FailoverOutcome,
+	startedAt: number,
+	stream: boolean,
+	est: { inputEstimate: number; outputEstimate: number },
+): Record<string, unknown> {
+	const usage = o.usage;
+	const tokensOut = usage?.output ?? Math.ceil(o.streamedBytes / 4);
+	const base: Record<string, unknown> = {
 		latency_ms: Date.now() - startedAt,
-	}).catch((e) => console.error('release failed', e));
-	if (allKeysDead) {
-		return json(
-			{
-				error: {
-					type: 'provider_keys_rejected',
-					message:
-						'The upstream provider rejected our credentials from this deployment. This is transient infrastructure — the admin has been notified via key health metrics.',
-				},
-			},
-			502,
-		);
+		tokens_in: usage?.input ?? (o.streamedBytes > 0 ? est.inputEstimate : 0),
+		tokens_out: tokensOut,
+		cache_read_tokens: usage?.cacheRead ?? 0,
+	};
+	if (o.finalError) {
+		const statusMap: Record<string, number> = {
+			no_provider_keys: 503,
+			provider_keys_rejected: 502,
+			provider_rate_limited: 429,
+			gateway_timeout: 504,
+			upstream_failed: 502,
+			client_request_error: o.finalError.status,
+		};
+		return {
+			status: statusMap[o.finalError.kind] ?? 502,
+			error_code: o.finalError.kind === 'client_request_error' ? 'upstream_failed' : o.finalError.kind,
+			...base,
+		};
 	}
-	return applyUpstreamHeaders(lastError!, await lastError!.text(), true);
+	return {
+		status: o.sniffedError?.status ?? 200,
+		error_code: o.sniffedError
+			? 'upstream_stream_error'
+			: o.timedOut
+				? 'gateway_timeout'
+				: o.aborted
+					? 'upstream_disconnected'
+					: !usage && stream
+						? 'usage_unreported'
+						: null,
+		...base,
+	};
+}
+
+/**
+ * Active provider rows (other than the primary) serving the same upstream
+ * model, in creation order. A resolution error degrades to a single-route
+ * chain (= old behavior + heartbeats), never to a failed request.
+ */
+async function fetchFallbackRoutes(upstreamModel: string, primaryModelId: string): Promise<RouteRow[]> {
+	try {
+		const rows = await postgrestRpc<
+			Array<{ model_id: string; provider_id: string; provider_kind: string; provider_base_url: string | null }>
+		>('resolve_model_fallbacks', {
+			p_upstream_model: upstreamModel,
+			p_exclude_model_id: primaryModelId,
+		});
+		return (rows ?? [])
+			.filter((r) => r.provider_base_url && r.model_id !== primaryModelId)
+			.map((r) => ({
+				model_id: r.model_id,
+				provider_id: r.provider_id,
+				provider_kind: r.provider_kind,
+				provider_base_url: r.provider_base_url as string,
+				is_primary: false,
+			}));
+	} catch (e) {
+		console.error('fallback resolution failed', e);
+		return [];
+	}
 }
 
 async function forwardToProvider(
 	env: Env,
 	wire: Wire,
-	resolved: ModelInfo,
+	route: RouteRow,
 	neutral: NeutralRequest,
 	rawBody: Record<string, unknown>,
 	apiKey: string,
 	forceStream = false,
-): Promise<{ ok: true; res: Response } | { ok: false; res: Response }> {
-	// forceStream: the non-stream path re-issues as streaming so the worker
-	// can respond to the client immediately (see aggregateProviderStream)
+	signal?: AbortSignal,
+): Promise<Response> {
+	// forceStream: the aggregate (stream:false) path asks upstream to stream so
+	// bytes can keep flowing to the durable client response (see failover.ts)
 	const effective = forceStream ? { ...neutral, stream: true } : neutral;
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	let payload: Record<string, unknown>;
@@ -424,9 +385,9 @@ async function forwardToProvider(
 		endpoint += (endpoint.includes('?') ? '&' : '?') + `key=${apiKey}`;
 	} else {
 		// OpenAI-family: custom base URL, OpenRouter, or the internal mock binding
-		const base = normalizeBase(resolved.provider_base_url);
+		const base = normalizeBase(route.provider_base_url);
 		headers['Authorization'] = `Bearer ${apiKey}`;
-		if (resolved.provider_kind === 'openrouter') {
+		if (route.provider_kind === 'openrouter') {
 			headers['HTTP-Referer'] = 'https://zeruvo.online';
 			headers['X-Title'] = 'Zeruvo AI';
 		}
@@ -452,12 +413,11 @@ async function forwardToProvider(
 		method: 'POST',
 		headers,
 		body: JSON.stringify(payload),
+		signal,
 	};
-	const res =
-		fetcher === (fetch as unknown as Fetcher)
-			? await fetch(endpoint, init)
-			: await env.MOCK_LLM!.fetch(new Request('https://mock.internal' + endpoint, init));
-	return res.ok ? { ok: true, res } : { ok: false, res };
+	return fetcher === (fetch as unknown as Fetcher)
+		? await fetch(endpoint, init)
+		: await env.MOCK_LLM!.fetch(new Request('https://mock.internal' + endpoint, init));
 }
 
 // ---------- /v1/models ----------
@@ -507,36 +467,6 @@ function json(obj: unknown, status: number): Response {
 		status,
 		headers: { 'Content-Type': 'application/json' },
 	});
-}
-
-function applyUpstreamHeaders(res: Response, bodyText: string, isError = false): Response {
-	const h = new Headers({ 'Content-Type': res.headers.get('content-type') ?? 'application/json' });
-	return new Response(isError ? bodyText : bodyText, { status: isError ? sanitizeStatus(res.status) : 200, headers: h });
-}
-
-/** Don't leak provider auth failures as-is; map to a clean 502. */
-function sanitizeStatus(status: number): number {
-	return [401, 402, 403, 429].includes(status) ? 502 : status >= 500 ? 502 : status;
-}
-
-function extractNonStreamUsage(bodyText: string, wire: Wire): Usage {
-	try {
-		const j = JSON.parse(bodyText);
-		if (wire === 'anthropic' && j.usage) {
-			return { input: j.usage.input_tokens ?? 0, output: j.usage.output_tokens ?? 0 };
-		}
-		if (wire === 'gemini' && j.usageMetadata) {
-			return { input: j.usageMetadata.promptTokenCount ?? 0, output: j.usageMetadata.candidatesTokenCount ?? 0 };
-		}
-		if (j.usage) {
-			return {
-				input: j.usage.prompt_tokens ?? 0,
-				output: j.usage.completion_tokens ?? 0,
-				cacheRead: j.usage.prompt_tokens_details?.cached_tokens ?? 0,
-			};
-		}
-	} catch {}
-	return { input: 0, output: 0 };
 }
 
 async function settleAfter(

@@ -1,9 +1,14 @@
 /**
- * SSE pass-through with:
+ * SSE pass-through pumps with:
  *  - first-chunk error sniffing (providers embed errors in HTTP-200 streams)
- *  - heartbeat comments every 15s to survive proxy idle windows
  *  - usage extraction from terminal chunks (per provider format)
  *  - normalized error frames on the client's own wire format
+ *
+ * The pumps are sink-driven: they never own the client ReadableStream,
+ * heartbeats or timers — the durable failover orchestrator (failover.ts)
+ * owns those and hands us a `push` for client bytes. A pump reports
+ * `abortedPreContent` when the attempt failed BEFORE any content byte
+ * reached the client, which makes it eligible for cross-provider failover.
  */
 export type Wire = 'openai' | 'anthropic' | 'gemini';
 
@@ -13,8 +18,8 @@ export interface Usage {
 	cacheRead?: number;
 }
 
-const HEARTBEAT_MS = 15_000;
-const TIMEOUT_MS_DEFAULT = 300_000; // admin-adjustable later via config
+export const HEARTBEAT_MS = 15_000;
+export const IDLE_TIMEOUT_MS = 300_000; // idle (per-stream), not total — re-armed on activity
 
 export interface StreamOutcome {
 	usage: Usage | null;
@@ -26,12 +31,31 @@ export interface StreamOutcome {
 	streamedBytes: number;
 }
 
-/**
- * Pipe provider SSE → client SSE. Returns accumulated outcome.
- * `toClientFrame` lets each wire re-frame terminal/error events its own way;
- * raw data lines pass through untouched otherwise (formats are compatible).
- */
-function makeIdleTimer(onFire: () => void, timeoutMs: number): { reset(): void; stop(): void } {
+export interface PumpResult extends StreamOutcome {
+	/**
+	 * True when this attempt failed (embedded error frame, dropped connection,
+	 * or zero usable frames) WITHOUT any content byte having reached the
+	 * client — the orchestrator may transparently retry another route.
+	 */
+	abortedPreContent?: boolean;
+}
+
+/** Error name used as AbortSignal.reason when the gateway kills a stalled attempt. */
+export const STALL_REASON = 'GatewayStall';
+/** Error name used as AbortSignal.reason when the client walked away. */
+export const CLIENT_GONE_REASON = 'ClientGone';
+
+export function signalReasonName(signal: AbortSignal | undefined): string {
+	const reason = signal?.reason as { name?: string } | undefined;
+	return reason?.name ?? '';
+}
+
+export interface IdleTimer {
+	reset(): void;
+	stop(): void;
+}
+
+export function makeIdleTimer(onFire: () => void, timeoutMs: number): IdleTimer {
 	let handle: ReturnType<typeof setTimeout> | null = null;
 	const arm = () => {
 		handle = setTimeout(() => {
@@ -56,141 +80,147 @@ function makeIdleTimer(onFire: () => void, timeoutMs: number): { reset(): void; 
 	};
 }
 
-export function pipeProviderStream(
+/**
+ * Forward provider SSE → client through `push` (stream:true client).
+ * `push` returns false when the client walked away → stop immediately;
+ * the outcome still resolves so quota settles for what was streamed.
+ *
+ * Same re-framing as the original pass-through: only `data:` payloads are
+ * forwarded (`data: <payload>\n\n`), OpenAI wire gets the terminal
+ * `data: [DONE]\n\n`, a mid-stream upstream drop emits an
+ * 'upstream_disconnected' error frame before [DONE] so the client knows
+ * the answer was cut short. First data frame sniffs for a provider-embedded
+ * error: if found before anything was forwarded → abortedPreContent (the
+ * orchestrator fails over instead of leaking a dead stream).
+ */
+export async function pumpProviderStream(
 	providerRes: Response,
 	clientWire: Wire,
-	timeoutMs = TIMEOUT_MS_DEFAULT,
-): { body: ReadableStream<Uint8Array>; outcome: Promise<StreamOutcome> } {
+	push: (s: string) => boolean,
+): Promise<PumpResult> {
 	const decoder = new TextDecoder();
-	const encoder = new TextEncoder();
-	let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-	let timerRef: { reset(): void; stop(): void } | null = null;
-
-	const outcome: StreamOutcome = { usage: null, streamedBytes: 0 };
-	let resolveOutcome!: (o: StreamOutcome) => void;
-	const outcomePromise = new Promise<StreamOutcome>((r) => (resolveOutcome = r));
-	let outcomeSettled = false;
-	/** idempotent resolution — client cancels/timeout/error can all race here */
-	function finish() {
-		if (outcomeSettled) return;
-		outcomeSettled = true;
-		resolveOutcome(outcome);
-	}
-
+	const outcome: PumpResult = { usage: null, streamedBytes: 0 };
 	const reader = providerRes.body!.getReader();
 
-	/**
-	 * Idle timeout: re-armed on every chunk of upstream activity. A stream
-	 * that is actively producing is never killed; only a stalled one hits
-	 * the limit. (The previous single-shot 300s timer killed legitimate
-	 * long generations mid-answer once the context grew.)
-	 */
+	let firstDataSeen = false;
+	let clientGone = false;
+	let buffer = '';
 
-	const body = new ReadableStream<Uint8Array>({
-		async start(controller) {
-			let buffer = '';
-			let firstDataSeen = false;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
 
-			/** enqueue that never throws on a dead client */
-			function safeEnqueue(chunk: Uint8Array): boolean {
-				try {
-					controller.enqueue(chunk);
-					return true;
-				} catch {
-					return false; // client gone
-				}
-			}
+			let idx: number;
+			while ((idx = buffer.indexOf('\n')) !== -1) {
+				const line = buffer.slice(0, idx).replace(/\r$/, '');
+				buffer = buffer.slice(idx + 1);
+				if (!line.startsWith('data:')) continue;
+				const payload = line.slice(5).trim();
+				if (!payload) continue;
 
-			const timer = makeIdleTimer(() => {
-				outcome.timedOut = true;
-				safeEnqueue(
-					encoder.encode(errorFrame(clientWire, 'gateway_timeout', 'Upstream idle beyond the time limit')),
-				);
-				try { reader.cancel(); } catch {}
-				cleanup();
-				try { controller.close(); } catch {}
-				finish();
-			}, timeoutMs);
-			timerRef = timer;
-
-			heartbeatInterval = setInterval(() => {
-				timer.reset(); // a heartbeat counts as our own activity toward the client
-				safeEnqueue(encoder.encode(': heartbeat\n\n'));
-			}, HEARTBEAT_MS);
-
-			try {
-				for (;;) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					timer.reset();
-					buffer += decoder.decode(value, { stream: true });
-
-					let idx: number;
-					while ((idx = buffer.indexOf('\n')) !== -1) {
-						const line = buffer.slice(0, idx).replace(/\r$/, '');
-						buffer = buffer.slice(idx + 1);
-						if (!line.startsWith('data:')) continue;
-						const payload = line.slice(5).trim();
-						if (!payload) continue;
-
-						if (!firstDataSeen) {
-							firstDataSeen = true;
-							const err = sniffError(payload, providerRes.status);
-							if (err) {
-								outcome.sniffedError = err;
-								safeEnqueue(encoder.encode(errorFrame(clientWire, 'upstream_error', err.message)));
-								cleanup();
-								try { controller.close(); } catch {}
-								finish();
-								return;
-							}
+				if (!firstDataSeen) {
+					firstDataSeen = true;
+					const err = sniffError(payload, providerRes.status);
+					if (err) {
+						outcome.sniffedError = err;
+						if (outcome.streamedBytes === 0) {
+							outcome.abortedPreContent = true;
+						} else {
+							push(`data: ${payload}\n\n`); // content already in flight — forward it
 						}
-						extractUsage(payload, clientWire, outcome);
-						outcome.streamedBytes += payload.length;
-						// stop piping if the client walked away — but the outcome
-						// still resolves so quota settles for what was streamed
-						if (!safeEnqueue(encoder.encode(`data: ${payload}\n\n`))) {
-							cleanup();
-							try { reader.cancel(); } catch {}
-							try { controller.close(); } catch {}
-							finish();
-							return;
-						}
+						try { reader.cancel(); } catch { /* ignore */ }
+						return outcome;
 					}
 				}
-			} catch {
-				/* upstream aborted mid-stream */
-				outcome.aborted = true;
-				// tell the client the answer was cut short — a bare [DONE] would
-				// present a truncated generation as a complete one
-				safeEnqueue(
-					encoder.encode(errorFrame(clientWire, 'upstream_disconnected', 'Upstream connection dropped mid-response')),
-				);
+				extractUsage(payload, clientWire, outcome);
+				outcome.streamedBytes += payload.length;
+				if (!push(`data: ${payload}\n\n`)) {
+					clientGone = true;
+					break;
+				}
 			}
-
-			// terminal frame per wire
-			if (clientWire === 'openai') safeEnqueue(encoder.encode('data: [DONE]\n\n'));
-			cleanup();
-			try { controller.close(); } catch {}
-			finish();
-		},
-		cancel() {
-			cleanup();
-			try {
-				reader.cancel();
-			} catch {}
-			// client walked away mid-stream — still settle quota for the
-			// provable volume streamed so far (was: reservation stranded)
-			finish();
-		},
-	});
-
-	function cleanup() {
-		if (heartbeatInterval) clearInterval(heartbeatInterval);
-		timerRef?.stop();
+			if (clientGone) {
+				try { reader.cancel(); } catch { /* ignore */ }
+				return outcome;
+			}
+		}
+	} catch {
+		/* upstream reader threw (dropped or aborted) */
+		if (outcome.streamedBytes === 0) {
+			// died before any content — let the orchestrator try another route
+			outcome.abortedPreContent = true;
+			return outcome;
+		}
+		// content already reached the client: the orchestrator decides the
+		// terminal error (stall vs disconnect) and writes the honest frame
+		outcome.aborted = true;
+		return outcome;
 	}
 
-	return { body, outcome: outcomePromise };
+	if (!clientGone && clientWire === 'openai') push('data: [DONE]\n\n');
+	return outcome;
+}
+
+/**
+ * Consume provider SSE into one complete JSON document, for stream:false
+ * clients. Writes NOTHING to the client while collecting (the durable
+ * stream's whitespace keep-alive covers that), so every failure mode here
+ * is still switchable: embedded error, zero frames, or a mid-collection
+ * drop before the assembled doc was pushed → abortedPreContent.
+ */
+export async function pumpAggregate(
+	providerRes: Response,
+	clientWire: Wire,
+): Promise<PumpResult & { bodyText: string }> {
+	const decoder = new TextDecoder();
+	const outcome: PumpResult = { usage: null, streamedBytes: 0 };
+	const reader = providerRes.body!.getReader();
+
+	const frames: string[] = [];
+	let errorSeen: { status: number; message: string } | undefined;
+
+	try {
+		let buffer = '';
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			let idx: number;
+			while ((idx = buffer.indexOf('\n')) !== -1) {
+				const line = buffer.slice(0, idx).replace(/\r$/, '');
+				buffer = buffer.slice(idx + 1);
+				if (!line.startsWith('data:')) continue;
+				const payload = line.slice(5).trim();
+				if (!payload || payload === '[DONE]') continue;
+
+				if (!errorSeen) {
+					const err = sniffError(payload, providerRes.status);
+					if (err) { errorSeen = err; break; }
+				}
+				extractUsage(payload, clientWire, outcome);
+				outcome.streamedBytes += payload.length;
+				frames.push(payload);
+			}
+			if (errorSeen) break;
+		}
+	} catch {
+		/* upstream dropped mid-collection */
+	}
+
+	if (errorSeen) {
+		outcome.sniffedError = errorSeen;
+		outcome.abortedPreContent = true; // nothing was written to the client
+		return { ...outcome, bodyText: '' };
+	}
+	if (frames.length === 0) {
+		// empty stream — pointless to deliver; try another route
+		outcome.abortedPreContent = true;
+		return { ...outcome, bodyText: '' };
+	}
+	const bodyText = JSON.stringify(assembleResponse(clientWire, frames, outcome.usage));
+	return { ...outcome, bodyText };
 }
 
 /** Providers may return HTTP 200 but stream an error object as the first event. */
@@ -246,6 +276,29 @@ function extractUsage(payload: string, wire: Wire, outcome: StreamOutcome): void
 	}
 }
 
+/** Usage from a single non-streamed JSON document (gemini buffer path). */
+export function extractNonStreamUsage(bodyText: string, wire: Wire): Usage {
+	try {
+		const j = JSON.parse(bodyText);
+		if (wire === 'anthropic' && j.usage) {
+			return { input: j.usage.input_tokens ?? 0, output: j.usage.output_tokens ?? 0 };
+		}
+		if (wire === 'gemini' && j.usageMetadata) {
+			return { input: j.usageMetadata.promptTokenCount ?? 0, output: j.usageMetadata.candidatesTokenCount ?? 0 };
+		}
+		if (j.usage) {
+			return {
+				input: j.usage.prompt_tokens ?? 0,
+				output: j.usage.completion_tokens ?? 0,
+				cacheRead: j.usage.prompt_tokens_details?.cached_tokens ?? 0,
+			};
+		}
+	} catch {
+		/* fall through */
+	}
+	return { input: 0, output: 0 };
+}
+
 export function errorFrame(wire: Wire, code: string, message: string): string {
 	if (wire === 'anthropic') {
 		return `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: code, message } })}\n\n`;
@@ -258,133 +311,6 @@ export function errorFrame(wire: Wire, code: string, message: string): string {
 
 function truncate(s: string): string {
 	return s.length > 300 ? s.slice(0, 300) + '…' : s;
-}
-
-/**
- * Aggregate an upstream SSE stream into ONE complete JSON document, for
- * clients that asked stream:false.
- *
- * Why not `await res.text()` on a non-streaming upstream call? Because the
- * worker then sends zero bytes until the whole generation finishes — and
- * with a large context that exceeds Cloudflare's ~100s no-response window
- * (HTTP 524 kills the request). Instead we request streaming from the
- * provider, respond immediately with a single space (valid JSON
- * whitespace, ignored by every parser), then keep emitting a space every
- * 15s while frames accumulate — the connection stays visibly alive — and
- * finally enqueue the reassembled JSON.
- */
-export function aggregateProviderStream(
-	providerRes: Response,
-	clientWire: Wire,
-	timeoutMs = TIMEOUT_MS_DEFAULT,
-): { body: ReadableStream<Uint8Array>; outcome: Promise<StreamOutcome> } {
-	const decoder = new TextDecoder();
-	const encoder = new TextEncoder();
-
-	const outcome: StreamOutcome = { usage: null, streamedBytes: 0 };
-	let resolveOutcome!: (o: StreamOutcome) => void;
-	const outcomePromise = new Promise<StreamOutcome>((r) => (resolveOutcome = r));
-	let outcomeSettled = false;
-	function finish() {
-		if (outcomeSettled) return;
-		outcomeSettled = true;
-		resolveOutcome(outcome);
-	}
-
-	const reader = providerRes.body!.getReader();
-
-	const body = new ReadableStream<Uint8Array>({
-		async start(controller) {
-			let closed = false;
-			const push = (s: string) => {
-				if (closed) return;
-				try {
-					controller.enqueue(encoder.encode(s));
-				} catch {
-					/* client gone — keep aggregating so quota still settles */
-				}
-			};
-
-			// first byte IMMEDIATELY — Cloudflare's 524 clock stops here
-			push(' ');
-
-			// keep-alive whitespace while the model thinks
-			const timer = makeIdleTimer(() => {
-				outcome.timedOut = true;
-				push(JSON.stringify({
-					error: { message: 'Upstream idle beyond the time limit', type: 'gateway_timeout', code: 'gateway_timeout' },
-				}));
-				try { reader.cancel(); } catch {}
-				clearInterval(heartbeat);
-				closed = true;
-				try { controller.close(); } catch {}
-				finish();
-			}, timeoutMs);
-
-			const heartbeat = setInterval(() => {
-				timer.reset();
-				push(' ');
-			}, HEARTBEAT_MS);
-
-			// collected SSE payloads + wire-specific accumulators
-			const frames: string[] = [];
-			let errorSeen: { status: number; message: string } | undefined;
-
-			try {
-				let buffer = '';
-				for (;;) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					timer.reset();
-					buffer += decoder.decode(value, { stream: true });
-					let idx: number;
-					while ((idx = buffer.indexOf('\n')) !== -1) {
-						const line = buffer.slice(0, idx).replace(/\r$/, '');
-						buffer = buffer.slice(idx + 1);
-						if (!line.startsWith('data:')) continue;
-						const payload = line.slice(5).trim();
-						if (!payload || payload === '[DONE]') continue;
-
-						if (!errorSeen) {
-							const err = sniffError(payload, providerRes.status);
-							if (err) { errorSeen = err; break; }
-						}
-						extractUsage(payload, clientWire, outcome);
-						outcome.streamedBytes += payload.length;
-						frames.push(payload);
-					}
-					if (errorSeen) break;
-				}
-			} catch {
-				outcome.aborted = true;
-			}
-
-			clearInterval(heartbeat);
-			timer.stop();
-
-			// error → surface it as a normal JSON error with the upstream status
-			if (errorSeen) {
-				outcome.sniffedError = errorSeen;
-				push(JSON.stringify({ error: { message: errorSeen.message, type: 'upstream_error', code: errorSeen.status } }));
-				closed = true;
-				try { controller.close(); } catch {}
-				finish();
-				return;
-			}
-
-			// reassemble the complete response on the client's wire
-			push(JSON.stringify(assembleResponse(clientWire, frames, outcome.usage)));
-			closed = true;
-			try { controller.close(); } catch {}
-			finish();
-		},
-		cancel() {
-			try { reader.cancel(); } catch {}
-			finish();
-		},
-	});
-
-	return { body, outcome: outcomePromise };
 }
 
 /** Rebuild a full non-streaming response object from collected SSE frames. */
