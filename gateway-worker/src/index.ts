@@ -178,7 +178,7 @@ async function handleChat(
 				? rawBody.max_tokens
 				: undefined;
 	const est = estimateTokens(neutral.messages, maxTok);
-	const [reservation, dek, providerKeys] = await Promise.all([
+	const [reservation, dek] = await Promise.all([
 		reserve(
 			auth.ctx.user_id,
 			multiplier,
@@ -187,45 +187,29 @@ async function handleChat(
 			auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
 		),
 		importDek(envNow().NEXOR_ENCRYPTION_KEY),
-		loadProviderKeys(resolved.provider_id),
 	]);
 	if (!reservation.ok) {
 		return json({ error: { type: reservation.code, message: reservation.message } }, reservation.status);
 	}
 	const resv = reservation.reservation;
 
-	// ---- committed: the durable failover stream owns everything after here.
+	// ---- committed: the durable stream owns everything after here.
 	// The client Response exists from byte 0 (no more Cloudflare 524 during
 	// the provider header wait), keep-alive frames cover the stall windows,
-	// and a provider that fails BEFORE any content flows is escaped to the
-	// next active provider row serving the same upstream model. Billing
-	// identity stays the PRIMARY row's (multiplier, model_id, plan gating).
+	// and a key that fails BEFORE any content flows is rotated for the next
+	// live key of the SAME provider — provider choice stays the admin's.
 	const startedAt = Date.now();
-	const primaryRoute: RouteRow = {
+	const route: RouteRow = {
 		model_id: resolved.model_id,
 		provider_id: resolved.provider_id,
 		provider_kind: resolved.provider_kind,
 		provider_base_url: resolved.provider_base_url,
-		is_primary: true,
 	};
-	const fallbacks = await fetchFallbackRoutes(upstreamModel, resolved.model_id);
-	const routes: RouteRow[] = [primaryRoute, ...fallbacks];
 
-	// one key-load per provider within this request; the primary's is warm
-	const keyCache = new Map<string, Promise<ProviderKeyRow[]>>([
-		[resolved.provider_id, Promise.resolve(providerKeys)],
-	]);
 	const deps: FailoverDeps = {
-		call: (route, apiKey, forceStream, signal) =>
-			forwardToProvider(envNow(), clientWire, route, neutral, rawBody, apiKey, forceStream, signal),
-		loadKeys: (route) => {
-			let p = keyCache.get(route.provider_id);
-			if (!p) {
-				p = loadProviderKeys(route.provider_id).catch(() => [] as ProviderKeyRow[]);
-				keyCache.set(route.provider_id, p);
-			}
-			return p;
-		},
+		call: (r, apiKey, forceStream, signal) =>
+			forwardToProvider(envNow(), clientWire, r, neutral, rawBody, apiKey, forceStream, signal),
+		loadKeys: async (r) => loadProviderKeys(r.provider_id).catch(() => [] as ProviderKeyRow[]),
 		decrypt: (key) => decryptProviderKey(dek, key.encrypted_key),
 		markKeyDead: (keyId) => markDead(keyId, 5),
 	};
@@ -235,7 +219,7 @@ async function handleChat(
 	const { body, outcome } = startFailoverStream({
 		clientWire,
 		mode,
-		routes,
+		route,
 		deps,
 		headerWaitFirstMs: Number(envNow().GATEWAY_HEADER_WAIT_FIRST_MS) || undefined,
 		headerWaitLaterMs: Number(envNow().GATEWAY_HEADER_WAIT_LATER_MS) || undefined,
@@ -322,34 +306,6 @@ function logMeta(
 						: null,
 		...base,
 	};
-}
-
-/**
- * Active provider rows (other than the primary) serving the same upstream
- * model, in creation order. A resolution error degrades to a single-route
- * chain (= old behavior + heartbeats), never to a failed request.
- */
-async function fetchFallbackRoutes(upstreamModel: string, primaryModelId: string): Promise<RouteRow[]> {
-	try {
-		const rows = await postgrestRpc<
-			Array<{ model_id: string; provider_id: string; provider_kind: string; provider_base_url: string | null }>
-		>('resolve_model_fallbacks', {
-			p_upstream_model: upstreamModel,
-			p_exclude_model_id: primaryModelId,
-		});
-		return (rows ?? [])
-			.filter((r) => r.provider_base_url && r.model_id !== primaryModelId)
-			.map((r) => ({
-				model_id: r.model_id,
-				provider_id: r.provider_id,
-				provider_kind: r.provider_kind,
-				provider_base_url: r.provider_base_url as string,
-				is_primary: false,
-			}));
-	} catch (e) {
-		console.error('fallback resolution failed', e);
-		return [];
-	}
 }
 
 async function forwardToProvider(

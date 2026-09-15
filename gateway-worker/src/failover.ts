@@ -11,17 +11,15 @@
  * Here the client Response exists from the first moment: byte 0 goes out
  * immediately (`: open` comment for SSE, a single space for JSON — both are
  * valid-whitespace no-ops to every parser), heartbeats keep the connection
- * alive during the header wait, and attempts walk a ROUTE × KEY matrix:
- *   route 0 = primary provider (billing identity), then every other active
- *   provider row that serves the same upstream model (resolve_model_fallbacks).
- * A route is escaped when it stalls (header deadline), 5xx's, 429's, drops
- * the connection or embeds an error BEFORE any content byte reached the
- * client. After content flows, switching is impossible — we end the stream
- * honestly with an error frame instead.
+ * alive during the header wait, and attempts rotate across the provider's
+ * KEYS (the admin decides which providers serve a model — the gateway never
+ * escapes to an unenabled provider). A key attempt is retried on another
+ * key when it stalls (header deadline), 429s, 5xx's, drops the connection
+ * or embeds an error BEFORE any content byte reached the client; auth
+ * failures additionally mark the key dead. After content flows, switching
+ * is impossible — we end the stream honestly with an error frame instead.
  *
- * Billing identity never changes: multipliers, plan gating and request_logs
- * model_id stay the PRIMARY row's; a fallback only swaps which provider
- * answers. Settle happens exactly once, in the caller, off the outcome.
+ * Settle happens exactly once, in the caller, off the outcome.
  */
 import { pickWeighted, type ProviderKeyRow } from './keys';
 import {
@@ -40,12 +38,11 @@ import {
 } from './stream';
 
 export interface RouteRow {
-	/** models.id of THIS row — failover identity only; billing stays primary's */
+	/** models.id of THIS row (the provider the admin enabled for this model) */
 	model_id: string;
 	provider_id: string;
 	provider_kind: string;
 	provider_base_url: string;
-	is_primary: boolean;
 }
 
 export interface FailoverDeps {
@@ -84,7 +81,8 @@ export interface FailoverOptions {
 	clientWire: Wire;
 	/** 'sse' passthrough | 'aggregate' stream:false | 'buffer' gemini non-stream JSON */
 	mode: 'sse' | 'aggregate' | 'buffer';
-	routes: RouteRow[]; // routes[0] === primary
+	/** the admin-enabled provider row for this model — the ONE route */
+	route: RouteRow;
 	deps: FailoverDeps;
 	headerWaitFirstMs?: number;
 	headerWaitLaterMs?: number;
@@ -92,7 +90,8 @@ export interface FailoverOptions {
 
 const DEFAULT_HEADER_WAIT_FIRST_MS = 100_000;
 const DEFAULT_HEADER_WAIT_LATER_MS = 60_000;
-const MAX_KEYS_PER_ROUTE = 2;
+/** cap on key attempts within the route (bounds worst-case header-wait) */
+const MAX_KEY_ATTEMPTS = 3;
 
 interface AttemptFailure {
 	kind: FinalErrorKind;
@@ -192,21 +191,26 @@ export function startFailoverStream(opts: FailoverOptions): {
 		let sawNoKeys = false;
 		let attemptIndex = 0;
 
-		for (const route of opts.routes) {
-			if (outcome.clientGone) return;
+		// Single route (the provider the admin enabled for this model);
+		// resilience comes from rotating across its live KEYS. Cross-provider
+		// escape is a catalog decision (which provider is enabled), never a
+		// runtime one.
+		const route = opts.route;
+		if (!outcome.clientGone) {
 			const keys = await opts.deps.loadKeys(route).catch(() => [] as ProviderKeyRow[]);
 			const tried = new Set<string>();
-			for (let keyTry = 0; keyTry < MAX_KEYS_PER_ROUTE; keyTry++) {
+			for (let guard = 0; guard < MAX_KEY_ATTEMPTS; guard++) {
+				if (outcome.clientGone) return;
 				const candidates = keys.filter(
 					(k) => !tried.has(k.id) && (!k.dead_until || new Date(k.dead_until).getTime() <= Date.now()),
 				);
 				const chosen = pickWeighted(candidates);
 				if (!chosen) {
-					if (keyTry === 0) {
+					if (tried.size === 0) {
 						sawNoKeys = true;
 						outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: no live keys`);
 					}
-					break; // next route
+					break; // out of keys for this route
 				}
 				tried.add(chosen.id);
 				attemptIndex++;
@@ -223,18 +227,15 @@ export function startFailoverStream(opts: FailoverOptions): {
 				const forceStream = opts.mode === 'aggregate';
 				const result = await attempt(route, chosen, apiKey, forceStream, attemptIndex === 1);
 				if (result.done) return; // success or terminal client-shaped error
-				if (result.failure?.keyRejected) {
-					sawKeysRejected = true;
-					lastFailure = null; // next key may work; only surface if ALL fail
-					continue;
-				}
-				lastFailure = result.failure;
+				if (result.failure?.keyRejected) sawKeysRejected = true;
 				if (result.failure?.kind === 'provider_rate_limited') sawRateLimit = true;
-				break; // route-level failure → next route
+				lastFailure = result.failure;
+				// pre-content failure → rotate to the next live key (auth failures
+				// already marked the key dead by deps.markKeyDead)
 			}
 		}
 
-		// Every route exhausted and (by construction) zero content bytes reached
+		// Every key exhausted and (by construction) zero content bytes reached
 		// the client — surface the last failure as an in-band error frame.
 		if (!outcome.clientGone) {
 			const kind: FinalErrorKind = sawNoKeys && !lastFailure
@@ -248,7 +249,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 				lastFailure?.message ??
 				(kind === 'no_provider_keys'
 					? 'Provider has no live keys'
-					: 'All providers failed for this model. Retry shortly.');
+					: 'The provider failed on every available key. Retry shortly.');
 			outcome.finalError = { kind, status: lastFailure?.status ?? 502, message };
 			pushTerminalError(kind, message);
 		}

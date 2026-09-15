@@ -1,23 +1,20 @@
 /**
  * Failover E2E suite against the DEPLOYED gateway + mock provider.
  *
- * Per scenario: a FLAKY provider row (primary — enabled_for_users=true, the
- * scenario's sentinel bearer key) and a GOOD provider row (fallback —
- * enabled_for_users=false, healthy mock) sharing one upstream_model_id, so
- * resolve_model picks the flaky one and resolve_model_fallbacks hands the
- * gateway the good one.
- *
- * Asserts:
- *   S1 stall-then-524 failover → immediate prelude, content from GOOD route,
- *      ONE log row billed at the PRIMARY multiplier (x2, not x1)
- *   S2 stream:false aggregate → first byte <1s despite a 20s upstream stall,
- *      body parses as chat.completion JSON
- *   S3 429 failover → content from good route
- *   S4 200-embedded-error-frame failover → content from good route
- *   S5 mid-stream drop AFTER content → honest truncation frame + [DONE],
- *      NO second-provider content (no switching after content), log
- *      error_code=upstream_disconnected
- *   S6 all providers fail → single in-band error frame, ONE log row, 0 billed
+ * Resilience model (admin decision): the GATEWAY NEVER switches providers at
+ * runtime — provider choice is purely catalog (which provider row is enabled).
+ * Fault escape = rotating across the SAME provider's keys. The suite gives one
+ * mock provider two keys: a flaky sentinel bearer (picked first via weight)
+ * and a healthy one, per scenario:
+ *   S1 stall-then-524 on flaky key → rotate to good key, ONE log row, billed
+ *   S2 stream:false aggregate → first byte <1s despite 20s stall, JSON parses
+ *   S3 429 → rotate
+ *   S4 HTTP-200 embedded error frame → rotate
+ *   S5 mid-stream drop AFTER content → honest truncation, NO second provider/
+ *      key content, log flagged upstream_disconnected
+ *   S6 single flaky key (no good one) → all keys exhausted → in-band error,
+ *      ONE log row, zero billed
+ *   S7 401 → key marked dead (checked in DB), request still served by good key
  */
 import fs from 'fs';
 
@@ -59,7 +56,7 @@ async function readChunks(res, maxMs = 60_000) {
 	const chunks = [];
 	const reader = res.body.getReader();
 	const dec = new TextDecoder();
-	let timer = setTimeout(() => { try { reader.cancel(); } catch {} }, maxMs);
+	const timer = setTimeout(() => { try { reader.cancel(); } catch {} }, maxMs);
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
@@ -74,22 +71,27 @@ async function readChunks(res, maxMs = 60_000) {
 
 const allText = (chunks) => chunks.map((c) => c.s).join('');
 
-async function scenario(name, flakyBearer, stream, upstreamId, primaryMult = 2) {
-	const flaky = await insert('providers', { kind: 'custom', display_name: `${name}-flaky`, base_url: MOCK, status: 'active' });
-	const good = await insert('providers', { kind: 'custom', display_name: `${name}-good`, base_url: MOCK, status: 'active' });
-	await insert('provider_keys', { provider_id: flaky.id, label: 'k1', encrypted_key: await encryptKey(flakyBearer), weight: 1 });
-	await insert('provider_keys', { provider_id: good.id, label: 'k1', encrypted_key: await encryptKey('mock-ok'), weight: 1 });
-	const primary = await insert('models', {
-		provider_id: flaky.id, upstream_model_id: upstreamId, display_name: upstreamId,
-		usage_multiplier: primaryMult, enabled_for_users: true, slug: `${upstreamId}-p`, context_window: 8192,
+/**
+ * One provider, two keys. flakyWeight makes it the (near-)certain first pick;
+ * goodKey=false leaves the provider with only the flaky key (S6).
+ */
+async function scenario(name, upstreamId, flakyBearer, { goodKey = true, uid } = {}) {
+	const provider = await insert('providers', { kind: 'custom', display_name: `${name}-p`, base_url: MOCK, status: 'active' });
+	const flaky = await insert('provider_keys', {
+		provider_id: provider.id, label: 'flaky', encrypted_key: await encryptKey(flakyBearer), weight: 1000,
 	});
-	await insert('models', {
-		provider_id: good.id, upstream_model_id: upstreamId, display_name: upstreamId,
-		usage_multiplier: 1, enabled_for_users: false, slug: `${upstreamId}-g`, context_window: 8192,
+	let good = null;
+	if (goodKey) {
+		good = await insert('provider_keys', {
+			provider_id: provider.id, label: 'good', encrypted_key: await encryptKey('mock-ok'), weight: 1,
+		});
+	}
+	const model = await insert('models', {
+		provider_id: provider.id, upstream_model_id: upstreamId, display_name: upstreamId,
+		usage_multiplier: 2, enabled_for_users: true, slug: `${upstreamId}-p`, context_window: 8192,
 	});
-	// gating: the test user's plan has NO plan_models rows → allowed_models is
-	// empty → every enabled model passes (see auth_key_lookup)
-	return { flaky, good, primary, upstreamId };
+	void uid; // plan has no plan_models rows → no per-model gating
+	return { provider, flaky, good, model, upstreamId };
 }
 
 (async () => {
@@ -127,10 +129,10 @@ async function scenario(name, flakyBearer, stream, upstreamId, primaryMult = 2) 
 		return await r.json();
 	};
 
-	// ---- S1: stall-then-524 on primary → failover, billed ×primary multiplier
+	// ---- S1: flaky key stalls 20s then 524 → rotate to the good key
 	{
 		const id = `fo-s1-${Date.now()}`;
-		const sc = await scenario('s1', 'flaky-stall-524', true, id);
+		const sc = await scenario('s1', id, 'flaky-stall-524', { uid });
 		const t0 = Date.now();
 		const res = await callGw(id, { stream: true });
 		const ttfb = Date.now() - t0;
@@ -138,21 +140,20 @@ async function scenario(name, flakyBearer, stream, upstreamId, primaryMult = 2) 
 		const text = allText(chunks);
 		check('S1 first byte immediate (<3s, pre-stall)', ttfb < 3000, `${ttfb}ms`);
 		check('S1 prelude is SSE comment', text.startsWith(': open'), JSON.stringify(text.slice(0, 12)));
-		check('S1 no 524 leaked to client', res.status === 200);
-		check('S1 content from GOOD route', text.includes('Mock ') && text.includes('stream!'));
+		check('S1 content from the GOOD key', text.includes('Mock ') && text.includes('stream!'));
 		check('S1 terminal [DONE] present', text.includes('[DONE]'));
 		check('S1 no error frame', !text.includes('"error"'));
 		const logs = await logsFor(id);
 		check('S1 exactly ONE log row', logs.length === 1, JSON.stringify(logs));
 		check('S1 logged as success', logs[0]?.status === 200 && !logs[0]?.error_code);
-		check('S1 billed at PRIMARY model id', logs[0]?.model_id === sc.primary.id);
-		check('S1 weighted = usage(19) × 2 (primary mult)', logs[0]?.weighted_tokens === 38, String(logs[0]?.weighted_tokens));
+		check('S1 billed at model id', logs[0]?.model_id === sc.model.id);
+		check('S1 weighted = usage(19) × 2', logs[0]?.weighted_tokens === 38, String(logs[0]?.weighted_tokens));
 	}
 
-	// ---- S2: stream:false aggregate with 20s stalled primary
+	// ---- S2: stream:false aggregate with a 20s stalled flaky key
 	{
 		const id = `fo-s2-${Date.now()}`;
-		await scenario('s2', 'flaky-stall-524', false, id);
+		await scenario('s2', id, 'flaky-stall-524', { uid });
 		const t0 = Date.now();
 		const res = await callGw(id, {}); // stream omitted → aggregate mode
 		const ttfb = Date.now() - t0;
@@ -164,49 +165,44 @@ async function scenario(name, flakyBearer, stream, upstreamId, primaryMult = 2) 
 		check('S2 message content present', typeof doc?.choices?.[0]?.message?.content === 'string');
 	}
 
-	// ---- S3: 429 on primary → failover to good
+	// ---- S3: 429 on flaky key → rotate to good
 	{
 		const id = `fo-s3-${Date.now()}`;
-		await scenario('s3', 'flaky-429', true, id);
+		await scenario('s3', id, 'flaky-429', { uid });
 		const res = await callGw(id, { stream: true });
 		const text = allText(await readChunks(res));
-		check('S3 content from GOOD route', text.includes('Mock ') && text.includes('[DONE]'));
+		check('S3 content from GOOD key', text.includes('Mock ') && text.includes('[DONE]'));
 		check('S3 no rate-limit frame', !text.includes('provider_rate_limited'));
 	}
 
-	// ---- S4: HTTP-200 embedded error frame → pre-content failover
+	// ---- S4: HTTP-200 embedded error frame → pre-content rotation
 	{
 		const id = `fo-s4-${Date.now()}`;
-		await scenario('s4', 'flaky-200-errframe', true, id);
+		await scenario('s4', id, 'flaky-200-errframe', { uid });
 		const res = await callGw(id, { stream: true });
 		const text = allText(await readChunks(res));
 		check('S4 embedded error never leaked', !text.includes('simulated provider failure'));
-		check('S4 content from GOOD route', text.includes('stream!') && text.includes('[DONE]'));
+		check('S4 content from GOOD key', text.includes('stream!') && text.includes('[DONE]'));
 	}
 
 	// ---- S5: mid-stream drop AFTER content → honest truncation, no switch
 	{
 		const id = `fo-s5-${Date.now()}`;
-		await scenario('s5', 'flaky-drop-mid', true, id);
+		await scenario('s5', id, 'flaky-drop-mid', { uid });
 		const res = await callGw(id, { stream: true });
 		const text = allText(await readChunks(res));
 		check('S5 partial content delivered', text.includes('partial ') && text.includes('answer'));
 		check('S5 truncation error frame', text.includes('upstream_disconnected'));
-		check('S5 no GOOD-route content', !text.includes('Mock '));
+		check('S5 no GOOD-key content', !text.includes('Mock '));
 		check('S5 stream terminated', text.includes('[DONE]'));
 		const logs = await logsFor(id);
 		check('S5 one log row, flagged disconnected', logs.length === 1 && logs[0]?.error_code === 'upstream_disconnected', JSON.stringify(logs));
 	}
 
-	// ---- S6: every route fails → single in-band error, zero billing
+	// ---- S6: only one key and it fails → in-band error, zero billed
 	{
 		const id = `fo-s6-${Date.now()}`;
-		const flakyA = await insert('providers', { kind: 'custom', display_name: 's6-a', base_url: MOCK, status: 'active' });
-		const flakyB = await insert('providers', { kind: 'custom', display_name: 's6-b', base_url: MOCK, status: 'active' });
-		await insert('provider_keys', { provider_id: flakyA.id, label: 'k', encrypted_key: await encryptKey('flaky-429'), weight: 1 });
-		await insert('provider_keys', { provider_id: flakyB.id, label: 'k', encrypted_key: await encryptKey('flaky-200-errframe'), weight: 1 });
-		await insert('models', { provider_id: flakyA.id, upstream_model_id: id, display_name: id, usage_multiplier: 2, enabled_for_users: true, slug: `${id}-p`, context_window: 8192 });
-		await insert('models', { provider_id: flakyB.id, upstream_model_id: id, display_name: id, usage_multiplier: 1, enabled_for_users: false, slug: `${id}-g`, context_window: 8192 });
+		await scenario('s6', id, 'flaky-429', { goodKey: false, uid });
 		const res = await callGw(id, { stream: true });
 		const text = allText(await readChunks(res));
 		check('S6 200 + in-band error frame', res.status === 200 && text.includes('provider_rate_limited'), text.slice(0, 120));
@@ -216,16 +212,25 @@ async function scenario(name, flakyBearer, stream, upstreamId, primaryMult = 2) 
 		check('S6 flagged rate-limited', logs[0]?.error_code === 'provider_rate_limited');
 	}
 
+	// ---- S7: 401 → bad key marked dead, good key still serves
+	{
+		const id = `fo-s7-${Date.now()}`;
+		const sc = await scenario('s7', id, 'flaky-401', { uid });
+		const res = await callGw(id, { stream: true });
+		const text = allText(await readChunks(res));
+		check('S7 content from GOOD key', text.includes('stream!') && text.includes('[DONE]'));
+		const kr = await fetch(`${url}/rest/v1/provider_keys?id=eq.${sc.flaky.id}&select=dead_until`, { headers: H });
+		const krow = (await kr.json())[0];
+		check('S7 flaky key marked dead ~5min', !!krow?.dead_until && new Date(krow.dead_until) > new Date(), JSON.stringify(krow));
+	}
+
 	// ---- cleanup
 	await fetch(`${url}/auth/v1/admin/users/${uid}`, { method: 'DELETE', headers: H });
 	await fetch(`${url}/rest/v1/plans?id=eq.${testPlan.id}`, { method: 'DELETE', headers: H }).catch(() => {});
-	// bulk cleanup by upstream id pattern + provider display names
-	for (const pat of ['fo-s1*', 'fo-s2*', 'fo-s3*', 'fo-s4*', 'fo-s5*', 'fo-s6*']) {
+	for (const pat of ['fo-s1*', 'fo-s2*', 'fo-s3*', 'fo-s4*', 'fo-s5*', 'fo-s6*', 'fo-s7*']) {
 		await fetch(`${url}/rest/v1/models?upstream_model_id=like.${pat}`, { method: 'DELETE', headers: H }).catch(() => {});
 	}
-	for (const dn of ['s1-', 's2-', 's3-', 's4-', 's5-', 's6-']) {
-		await fetch(`${url}/rest/v1/providers?display_name=like.${dn}*`, { method: 'DELETE', headers: H }).catch(() => {});
-	}
+	await fetch(`${url}/rest/v1/providers?display_name=like.s*-p`, { method: 'DELETE', headers: H }).catch(() => {});
 
 	console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
 	process.exit(failures ? 1 : 0);
