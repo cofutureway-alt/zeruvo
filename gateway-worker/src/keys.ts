@@ -49,8 +49,9 @@ export function pickWeighted(keys: ProviderKeyRow[]): ProviderKeyRow | null {
 }
 
 export async function loadProviderKeys(providerId: string): Promise<ProviderKeyRow[]> {
+	// read-only → safe to retry through a transient pooler blip
 	const keys =
-		(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId })) ?? [];
+		(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId }, { retry: true })) ?? [];
 
 	// self-healing: if every key is marked dead but its window already
 	// expired, clear the stale markers and retry once — otherwise a single
@@ -61,9 +62,10 @@ export async function loadProviderKeys(providerId: string): Promise<ProviderKeyR
 			(k) => k.dead_until && new Date(k.dead_until).getTime() <= now,
 		);
 		if (stale.length) {
-			await Promise.all(stale.map((k) => postgrestRpc('revive_provider_key', { p_key_id: k.id })));
+			// idempotent set + read-only → safe to retry
+			await Promise.all(stale.map((k) => postgrestRpc('revive_provider_key', { p_key_id: k.id }, { retry: true })));
 			return (
-				(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId })) ?? []
+				(await postgrestRpc<ProviderKeyRow[]>('get_provider_keys', { p_provider_id: providerId }, { retry: true })) ?? []
 			);
 		}
 	}

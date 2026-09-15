@@ -224,6 +224,29 @@ async function scenario(name, upstreamId, flakyBearer, { goodKey = true, uid } =
 		check('S7 flaky key marked dead ~5min', !!krow?.dead_until && new Date(krow.dead_until) > new Date(), JSON.stringify(krow));
 	}
 
+	// ---- S8: unknown model with a valid key → 404 + VISIBLE log row
+	{
+		const id = `fo-s8-${Date.now()}`; // never inserted into models
+		const res = await callGw(id, { stream: true });
+		check('S8 404 model_not_found', res.status === 404);
+		await res.text();
+		const logs = await logsFor(id);
+		check('S8 rejection visible in request_logs', logs.length === 1 && logs[0]?.status === 404 && logs[0]?.error_code === 'model_not_found', JSON.stringify(logs));
+		check('S8 zero billed', logs[0]?.weighted_tokens === 0);
+	}
+
+	// ---- S9: bad key → 401, no row (user_id unknown), documents intent
+	{
+		const id = `fo-s9-${Date.now()}`;
+		const res = await fetch(GW + '/v1/chat/completions', {
+			method: 'POST',
+			headers: { Authorization: 'Bearer sk-nexor-notarealkeyatall', 'Content-Type': 'application/json' },
+			body: JSON.stringify({ model: id, messages: [{ role: 'user', content: 'x' }], stream: true }),
+		});
+		const text = await res.text();
+		check('S9 401 invalid_api_key', res.status === 401 && text.includes('invalid_api_key'), `${res.status} ${text.slice(0, 60)}`);
+	}
+
 	// ---- cleanup
 	await fetch(`${url}/auth/v1/admin/users/${uid}`, { method: 'DELETE', headers: H });
 	await fetch(`${url}/rest/v1/plans?id=eq.${testPlan.id}`, { method: 'DELETE', headers: H }).catch(() => {});

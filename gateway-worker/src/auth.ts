@@ -46,7 +46,8 @@ export async function authenticate(request: Request): Promise<AuthResult> {
 	}
 
 	const hash = await sha256Hex(header);
-	const rows = await postgrestRpc<AuthContext[]>('auth_key_lookup', { p_key_hash: hash });
+	// read-only lookup → safe to retry through a transient pooler blip
+	const rows = await postgrestRpc<AuthContext[]>('auth_key_lookup', { p_key_hash: hash }, { retry: true });
 	const ctx = rows?.[0];
 
 	if (!ctx) {

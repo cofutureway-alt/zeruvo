@@ -115,7 +115,27 @@ export default {
 	},
 };
 
-void postgrestRpc;
+/**
+ * Make pre-commit rejections visible in request_logs. Reuses settle_quota's
+ * log branch with zero amounts — the daily_usage update becomes a no-op and
+ * exactly one audit row lands (user_id is NOT NULL, so this is only callable
+ * after auth succeeded). Fire-and-forget: a dead DB can't fail the response
+ * twice.
+ */
+function logRejection(ctx: ExecutionContext, userId: string, startedAt: number, extra: Record<string, unknown>): void {
+	ctx.waitUntil(postgrestRpc('settle_quota', {
+		p_user_id: userId,
+		p_reserved_amount: 0,
+		p_actual_weighted: 0,
+		p_log: {
+			tokens_in: 0,
+			tokens_out: 0,
+			cache_read_tokens: 0,
+			latency_ms: Date.now() - startedAt,
+			...extra,
+		},
+	}).catch((e) => console.error('early log failed', e)));
+}
 
 // ---------- chat pipeline ----------
 async function handleChat(
@@ -125,22 +145,46 @@ async function handleChat(
 	geminiModel?: string,
 	geminiWantsStream?: boolean,
 ): Promise<Response> {
+	const startedAt = Date.now();
 	// auth, model resolution and body-read are independent — run together
 	const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
 
-	const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
-	const [auth, resolvedArr] = await Promise.all([
-		authenticate(request),
-		postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }).catch(() => null),
-	]);
-	const resolved = resolvedArr?.[0];
-	if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
+	// Honest failure for our own DB dependency: a transient Postgres/pooler
+	// blip must surface as a retryable 503, never masquerade as "Unknown
+	// model" (the old .catch(() => null) did exactly that and was invisible
+	// in request_logs).
+	const dependency503 = () =>
+		json({ error: { type: 'gateway_dependency_error', message: 'Gateway could not reach its database, retry shortly' } }, 503);
 
+	const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
+	const [authRaw, resolvedRaw] = await Promise.all([
+		// both are read-only → retry inside postgrestRpc on blips; null = threw
+		authenticate(request).catch((e) => {
+			console.error('auth rpc failed', e);
+			return null;
+		}),
+		postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }, { retry: true })
+			.then((rows) => rows ?? [])
+			.catch((e) => {
+				console.error('resolve_model rpc failed', e);
+				return null;
+			}),
+	]);
+	if (authRaw === null) return dependency503();
+	const auth = authRaw;
+	if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
+	if (resolvedRaw === null) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 503, error_code: 'gateway_dependency_error' });
+		return dependency503();
+	}
+	const resolved = resolvedRaw[0];
 	if (!resolved) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 404, error_code: 'model_not_found', upstream_model: upstreamModel0 });
 		return json({ error: { type: 'model_not_found', message: `Unknown model ${upstreamModel0}` } }, 404);
 	}
 	if (!resolved.enabled) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_disabled', model_id: resolved.model_id, upstream_model: upstreamModel0 });
 		return json({ error: { type: 'model_disabled', message: 'Model not available' } }, 403);
 	}
 	const multiplier = Number(resolved.usage_multiplier) || 1;
@@ -162,15 +206,17 @@ async function handleChat(
 	// plan/model gating
 	const allowed = auth.ctx.allowed_models ?? [];
 	if (allowed.length && !allowed.includes(resolved.model_id)) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_in_plan', model_id: resolved.model_id, upstream_model: upstreamModel });
 		return json({ error: { type: 'model_not_in_plan', message: 'Model not included in your plan' } }, 403);
 	}
 	const keyAllowed = auth.ctx.api_allowed_models ?? [];
 	if (keyAllowed.length && !keyAllowed.includes(resolved.model_id)) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_allowed_for_key', model_id: resolved.model_id, upstream_model: upstreamModel });
 		return json({ error: { type: 'model_not_allowed_for_key', message: 'Key may not call this model' } }, 403);
 	}
 
 	// atomic reservation BEFORE touching the provider — run it in parallel
-	// with the key material it doesn't depend on (dek import + provider keys)
+	// with the key material it doesn't depend on (dek import)
 	const maxTok =
 		clientWire === 'gemini'
 			? ((rawBody.generationConfig as { maxOutputTokens?: number })?.maxOutputTokens ?? undefined)
@@ -178,17 +224,29 @@ async function handleChat(
 				? rawBody.max_tokens
 				: undefined;
 	const est = estimateTokens(neutral.messages, maxTok);
-	const [reservation, dek] = await Promise.all([
-		reserve(
-			auth.ctx.user_id,
-			multiplier,
-			est.inputEstimate,
-			est.outputEstimate,
-			auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
-		),
-		importDek(envNow().NEXOR_ENCRYPTION_KEY),
-	]);
+	let reservation;
+	let dek: CryptoKey;
+	try {
+		[reservation, dek] = await Promise.all([
+			reserve(
+				auth.ctx.user_id,
+				multiplier,
+				est.inputEstimate,
+				est.outputEstimate,
+				auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
+			),
+			importDek(envNow().NEXOR_ENCRYPTION_KEY),
+		]);
+	} catch (e) {
+		// reserve re-throws anything that isn't a quota/no-plan verdict → the
+		// DB is unhealthy. Fail visibly, and never blindly retry the call:
+		// reserve_quota's SQL is a non-idempotent "+estimate".
+		console.error('reserve failed', e);
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 503, error_code: 'gateway_dependency_error', model_id: resolved.model_id, upstream_model: upstreamModel });
+		return dependency503();
+	}
 	if (!reservation.ok) {
+		logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: reservation.status, error_code: reservation.code, model_id: resolved.model_id, upstream_model: upstreamModel });
 		return json({ error: { type: reservation.code, message: reservation.message } }, reservation.status);
 	}
 	const resv = reservation.reservation;
@@ -198,7 +256,6 @@ async function handleChat(
 	// the provider header wait), keep-alive frames cover the stall windows,
 	// and a key that fails BEFORE any content flows is rotated for the next
 	// live key of the SAME provider — provider choice stays the admin's.
-	const startedAt = Date.now();
 	const route: RouteRow = {
 		model_id: resolved.model_id,
 		provider_id: resolved.provider_id,

@@ -18,20 +18,59 @@ async function serviceHeaders(env: Env): Promise<Record<string, string>> {
 	};
 }
 
-export async function postgrestRpc<T>(fn: string, body: unknown): Promise<T | null> {
+export async function postgrestRpc<T>(
+	fn: string,
+	body: unknown,
+	opts?: { retry?: boolean },
+): Promise<T | null> {
 	// env is threaded through a module-level set by index before first call
 	const env = currentEnv();
-	const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-		method: 'POST',
-		headers: await serviceHeaders(env),
-		body: JSON.stringify(body),
-	});
-	if (!res.ok) {
-		const text = await res.text();
-		throw new RpcError(res.status, text);
+	const attempts = opts?.retry ? 3 : 1;
+	const backoffs = [150, 400];
+
+	let lastErr: unknown;
+	for (let i = 0; i < attempts; i++) {
+		if (i > 0) await new Promise((r) => setTimeout(r, backoffs[i - 1] ?? 400));
+		try {
+			const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+				method: 'POST',
+				headers: await serviceHeaders(env),
+				body: JSON.stringify(body),
+				// a wedged pooler connection must never hang a user's turn
+				signal: AbortSignal.timeout(15_000),
+			});
+			if (res.ok) {
+				const text = await res.text();
+				return text ? (JSON.parse(text) as T) : null;
+			}
+			const err = new RpcError(res.status, await res.text());
+			if (i < attempts - 1 && isRetryable(err)) {
+				lastErr = err;
+				continue;
+			}
+			throw err;
+		} catch (err) {
+			if (err instanceof RpcError) throw err; // classified above; non-retryable stop
+			lastErr = err;
+			// fetch rejections (TimeoutError from the signal / TypeError network)
+			// are blips — retryable only for idempotent read-only callers
+			if (i < attempts - 1 && isRetryableThrow(err)) continue;
+			throw err;
+		}
 	}
-	const text = await res.text();
-	return text ? (JSON.parse(text) as T) : null;
+	throw lastErr;
+}
+
+/** PostgREST/HTTP failures that a retry can plausibly fix (pooler blips). */
+function isRetryable(err: RpcError): boolean {
+	if ([502, 503, 504].includes(err.status)) return true;
+	// connection-class SQLSTATEs + PostgREST transport error
+	return /"code":"(08\w{3}|57P0\d|53300|PGRST999)/.test(err.body) || err.body.includes('PGRST999');
+}
+
+function isRetryableThrow(err: unknown): boolean {
+	const name = (err as Error)?.name;
+	return name === 'AbortError' || name === 'TimeoutError' || name === 'TypeError';
 }
 
 export class RpcError extends Error {
