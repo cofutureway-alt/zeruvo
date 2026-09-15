@@ -244,6 +244,11 @@ function sniffError(payload: string, httpStatus: number): { status: number; mess
 }
 
 function extractUsage(payload: string, wire: Wire, outcome: StreamOutcome): void {
+	// fast path: the Workers CPU budget is precious on long generations — a
+	// substring scan costs ~nothing compared to JSON.parse'ing every frame.
+	// Only real usage OBJECTS matter: many providers ship "usage":null on
+	// every chunk, and naive substrings would parse (waste) all of them.
+	if (!payload.includes('"usage":{') && !payload.includes('usageMetadata')) return;
 	try {
 		const j = JSON.parse(payload);
 		if (wire === 'anthropic') {
