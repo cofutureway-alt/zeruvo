@@ -307,6 +307,8 @@ create table public.coupon_redemptions (
 alter table public.coupon_redemptions enable row level security;
 create policy "coupon_redemptions: owner read" on public.coupon_redemptions for select
   using (user_id = auth.uid() or public.is_admin());
+create policy "coupon_redemptions: service insert" on public.coupon_redemptions for insert
+  with check (auth.uid() is null or subquery((select user_id from payments where id = coupon_redemptions.payment_id)) = auth.uid());
 -- writes via service_role at checkout success
 
 -- ---------- announcements ----------

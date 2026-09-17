@@ -94,6 +94,16 @@ if (req.method === 'OPTIONS') {
 		.select('id,user_id,status,amount_egp,meta').eq('gateway_ref', orderId).single();
 	if (!payment) return Response.json({ error: 'unknown order' }, { status: 404, headers: CORS_HEADERS })
 
+	// Extract meta FIRST before any early returns
+	const paidMeta = payment.meta as any;
+
+	// Test-mode filter: ignore payments from test-mode transactions
+	const mode = paidMeta?.mode as string | undefined;
+	if (mode === 'test') {
+		console.log('kashier webhook: ignoring test-mode payment for order', orderId);
+		return Response.json({ ok: true, handled: 'test-mode-ignored' }, { headers: CORS_HEADERS });
+	}
+
 	const success = body.event === 'pay' && String(body.data.status).toUpperCase() === 'SUCCESS';
 	if (!success) {
 		// only downgrade PENDING orders — never overwrite a PAID one
@@ -123,7 +133,6 @@ if (req.method === 'OPTIONS') {
 		.select('duration_unit,duration_count').eq('id', planId).single();
 	if (!plan) return Response.json({ error: 'plan missing' }, { status: 500, headers: CORS_HEADERS })
 
-	const paidMeta = payment.meta as any;
 	const now = new Date();
 	// Renewals extend from the current subscription's expiry (never earlier
 	// than now), so an early renewal stacks on top of the remaining time.

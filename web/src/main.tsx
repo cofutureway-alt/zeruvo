@@ -5,6 +5,7 @@ import './index.css';
 import { i18next as i18n, rtlLocales, localeFonts } from './i18n-config';
 import { ThemeProvider } from './design-system/theme-provider';
 import { AuthProvider } from './auth-context';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute, AdminRoute, GuestRoute, PendingRoute } from './routes/guards';
 import { AppLayout } from './layouts/AppLayout';
 import Home from './pages/marketing/HomeNew';
@@ -246,6 +247,8 @@ function App() {
 void useLocation;
 ReactDOM.createRoot(document.getElementById('root')!).render(
 	<React.StrictMode>
-		<App />
+		<ErrorBoundary>
+			<App />
+		</ErrorBoundary>
 	</React.StrictMode>,
 );

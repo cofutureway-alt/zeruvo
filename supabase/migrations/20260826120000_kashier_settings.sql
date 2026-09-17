@@ -24,3 +24,6 @@ create policy "payment_gateways: admin read" on public.payment_gateways for sele
   using (public.is_admin());
 create policy "payment_gateways: admin write" on public.payment_gateways for all
   using (public.is_admin()) with check (public.is_admin());
+-- egp_rate is public for frontend display at checkout
+create policy "payment_gateways: egp_rate public" on public.payment_gateways for select
+  using (true) with check (true);
