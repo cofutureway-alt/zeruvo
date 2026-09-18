@@ -75,12 +75,7 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'authorization, x-api-key, x-goog-api-key, content-type, anthropic-version',
-          'Access-Control-Max-Age': '86400',
-        },
+        headers: CORS_HEADERS,
       });
     }
 
@@ -166,47 +161,46 @@ async function handleChat(
   geminiWantsStream?: boolean,
 ): Promise<Response> {
   const startedAt = Date.now();
-  // DoS protection: reject oversized bodies before parsing JSON
+  const dependency503 = () =>
+    json({ error: { type: 'gateway_dependency_error', message: 'Gateway could not reach its database, retry shortly' } }, 503);
+
+  // DoS protection: reject oversized bodies BEFORE parsing JSON.
+  // Auth must succeed before we allocate/parse the body — an unauthenticated
+  // request to a large body must never trigger parsing.
   const contentLength = request.headers.get('content-length');
   if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
     return json({ error: { type: 'payload_too_large', message: 'Request body too large' } }, 413);
   }
-  // auth, model resolution and body-read are independent — run together
-  const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
 
-  // Honest failure for our own DB dependency: a transient Postgres/pooler
-  // blip must surface as a retryable 503, never masquerade as "Unknown
-  // model" (the old .catch(() => null) did exactly that and was invisible
-  // in request_logs).
-  const dependency503 = () =>
-    json({ error: { type: 'gateway_dependency_error', message: 'Gateway could not reach its database, retry shortly' } }, 503);
-
-  const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
-  const [authRaw, resolvedRaw] = await Promise.all([
-    // both are read-only → retry inside postgrestRpc on blips; null = threw
-    authenticate(request).catch((e) => {
-      console.error('auth rpc failed', e);
-      return null;
-    }),
-    postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }, { retry: true })
-      .then((rows) => rows ?? [])
-      .catch((e) => {
-        console.error('resolve_model rpc failed', e);
-        return null;
-      }),
-  ]);
+  // Authenticate FIRST (before body allocation)
+  const authRaw = await authenticate(request).catch((e) => {
+    console.error('auth rpc failed', e);
+    return null;
+  });
   if (authRaw === null) return dependency503();
   const auth = authRaw;
   if (!auth.ok) return json({ error: { type: auth.code, message: auth.message } }, auth.status);
-  if (resolvedRaw === null) {
 
-  // Rate limit enforcement
+  // Rate limit enforcement (post-auth, pre-body-parse)
   const rl = checkRateLimit(auth.ctx.user_id, auth.ctx.rate_limit_per_min);
   if (!rl.allowed) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 429, error_code: 'rate_limited', reset_in_ms: rl.resetIn });
-    return new Response(JSON.stringify({ error: { type: 'rate_limited', message: 'Rate limit exceeded. Try again later.', reset_in_ms: rl.resetIn } }), { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.resetIn / 1000)) } });
+    return json({ error: { type: 'rate_limited', message: 'Rate limit exceeded' } }, 429);
   }
+
+  // NOW safe to read the body
+  const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
+
+  // model resolution (retryable on DB blips)
+  const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
+  const resolvedRaw = await postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }, { retry: true })
+    .then((rows) => rows ?? [])
+    .catch((e) => {
+      console.error('resolve_model rpc failed', e);
+      return null;
+    });
+  if (resolvedRaw === null) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 503, error_code: 'gateway_dependency_error' });
     return dependency503();
   }
@@ -507,10 +501,17 @@ function sseHeaders(): HeadersInit {
   };
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-api-key, x-goog-api-key, content-type, anthropic-version',
+  'Access-Control-Max-Age': '86400',
+};
+
 function json(obj: unknown, status: number): Response {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
 }
 

@@ -15,6 +15,8 @@ export interface AuthContext {
 	allowed_models: string[] | null; // plan model ids, null if plan has none configured
 	api_allowed_models: string[] | null;
 	rate_limit_per_min: number;
+	/** true = GitHub user whose account is younger than the configured minimum → locked */
+	is_pending: boolean;
 }
 
 export const KEY_PREFIX = 'sk-nexor-';
@@ -67,6 +69,18 @@ export async function authenticate(request: Request): Promise<AuthResult> {
 			status: 403,
 			code: 'plan_expired',
 			message: 'Plan expired. Renew to continue.',
+		};
+	}
+
+	// H4 fix: reject pending GitHub users at the gateway level.
+	// The client-side pending gate is bypassable with raw curl; the server
+	// must enforce it here where quota/billing lives.
+	if (ctx.is_pending) {
+		return {
+			ok: false,
+			status: 403,
+			code: 'github_pending',
+			message: 'GitHub account too new to access the API. Please wait until your account meets the age requirement.',
 		};
 	}
 

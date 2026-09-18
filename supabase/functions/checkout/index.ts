@@ -108,6 +108,16 @@ try {
 			new Date(coupon.valid_to) > now &&
 			coupon.times_redeemed < coupon.max_redemptions
 		) {
+			// H5 fix: enforce per-user limit (one use per customer) at checkout
+			// so the same user cannot re-apply a coupon they already redeemed.
+			const { data: already } = await admin.from('coupon_redemptions')
+				.select('id')
+				.eq('coupon_code', coupon.code)
+				.eq('user_id', user.id)
+				.maybeSingle();
+			if (already) {
+				return Response.json({ error: 'Coupon already used by this customer' }, { status: 400, headers: CORS_HEADERS })
+			}
 			discountPct = Number(coupon.percent_off);
 			appliedCoupon = coupon.code;
 		} else {

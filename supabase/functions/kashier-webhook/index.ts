@@ -167,14 +167,16 @@ if (req.method === 'OPTIONS') {
 	}).eq('id', payment.id);
 
 	// record coupon redemption only on successful payment
+	// Uses the atomic redeem_coupon RPC so that:
+	//  - a replayed/late webhook does not double-increment the global counter
+	//  - per-user "one use per customer" is enforced at the DB level
+	//  - concurrent redemptions resolve via the UNIQUE(coupon_code,user_id) key
 	if (paidMeta?.coupon_code) {
-		await admin.from('coupon_redemptions')
-			.insert({ coupon_code: paidMeta.coupon_code, user_id: payment.user_id, payment_id: payment.id })
-			.then(({ error }) => {
-				// duplicate redemption (same user+code) — ignore, the discount already applied
-				void error;
-			});
-		await admin.rpc('increment_coupon_redeemed', { p_code: paidMeta.coupon_code });
+		await admin.rpc('redeem_coupon', {
+			p_code: paidMeta.coupon_code,
+			p_user_id: payment.user_id,
+			p_payment_id: payment.id,
+		});
 	}
 
 	return Response.json({ ok: true, handled: 'paid' }, { headers: CORS_HEADERS })

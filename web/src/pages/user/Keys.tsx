@@ -12,7 +12,19 @@ interface KeyRow {
 	created_at: string;
 }
 
-const KEY_PREFIX = 'sk-nexor-';
+/** Calls the api-keys Edge Function with the user's session JWT. */
+async function keysApi(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
+	const { data: { session } } = await supabase.auth.getSession();
+	const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-keys`, {
+		method,
+		headers: {
+			Authorization: `Bearer ${session?.access_token ?? ''}`,
+			'Content-Type': 'application/json',
+		},
+		body: body ? JSON.stringify(body) : undefined,
+	});
+	return { ok: res.ok, data: await res.json().catch(() => ({})) };
+}
 
 export default function Keys() {
 	const [email, setEmail] = useState('');
@@ -26,11 +38,8 @@ export default function Keys() {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (!user) return;
 		setEmail(user.email ?? '');
-		const { data } = await supabase
-			.from('user_api_keys')
-			.select('id,name,prefix,last4,status,created_at')
-			.order('created_at', { ascending: false });
-		setKeys(data ?? []);
+		const { ok, data } = await keysApi('GET');
+		if (ok) setKeys(data.keys ?? []);
 	}, []);
 
 	useEffect(() => {
@@ -39,30 +48,21 @@ export default function Keys() {
 
 	async function createKey() {
 		setBusy(true);
-		const { data: { user } } = await supabase.auth.getUser();
-		if (!user) return;
-
-		const raw = KEY_PREFIX + crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
-		const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-		const hash = [...new Uint8Array(hashBuf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-
-		const { error } = await supabase.from('user_api_keys').insert({
-			user_id: user.id,
-			name: name.trim() || 'default',
-			prefix: raw.slice(0, 12),
-			last4: raw.slice(-4),
-			sha256_hash: hash,
-		});
-		if (!error) {
-			setNewKey(raw);
+		const { ok, data } = await keysApi('POST', { action: 'create', name: name.trim() || undefined });
+		if (!ok) {
+			alert(data.error ?? 'Failed to create key');
+		} else {
+			setNewKey(data.key);
 			setName('');
 		}
 		await load();
 		setBusy(false);
 	}
 
-	async function revoke(id: string) {
-		await supabase.from('user_api_keys').update({ status: 'revoked' }).eq('id', id);
+	async function destroyKey(id: string) {
+		if (!window.confirm('Permanently delete this key? It stops working immediately and cannot be undone.')) return;
+		const { ok, data } = await keysApi('DELETE', { key_id: id });
+		if (!ok) alert(data.error ?? 'Failed to delete');
 		await load();
 	}
 
@@ -72,7 +72,7 @@ export default function Keys() {
 				<header>
 					<h1 className="text-xl font-semibold tracking-tight">API Keys</h1>
 					<p className="mt-0.5 text-sm text-[var(--nx-muted)]">
-						Keys are stored as one-way hashes — shown once at creation.
+						Keys are stored as one-way hashes — shown once at creation. Maximum 2 active keys.
 					</p>
 				</header>
 
@@ -85,13 +85,19 @@ export default function Keys() {
 					/>
 					<button
 						onClick={createKey}
-						disabled={busy}
+						disabled={busy || keys.length >= 2}
 						className="flex shrink-0 items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
 					>
 						<Plus size={15} />
 						Create key
 					</button>
 				</div>
+
+				{keys.length >= 2 && (
+					<p className="text-xs text-amber-400">
+						You've reached the 2-key limit — delete one to create another.
+					</p>
+				)}
 
 				{newKey && (
 					<div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
@@ -141,11 +147,9 @@ export default function Keys() {
 									</td>
 									<td className="px-4 py-3 text-xs text-[var(--nx-muted)]">{k.created_at.slice(0, 10)}</td>
 									<td className="px-4 py-3 text-end">
-										{k.status === 'active' && (
-											<button onClick={() => revoke(k.id)} className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400" aria-label="Revoke">
-												<Trash2 size={14} />
-											</button>
-										)}
+										<button onClick={() => destroyKey(k.id)} className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400" aria-label="Permanently delete">
+											<Trash2 size={14} />
+										</button>
 									</td>
 								</tr>
 							))}
