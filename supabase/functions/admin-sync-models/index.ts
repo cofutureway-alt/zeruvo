@@ -35,6 +35,7 @@ interface ORModel {
 	};
 	pricing?: Record<string, string>;
 	top_provider?: { max_completion_tokens?: number };
+	supported_parameters?: string[];
 }
 
 /** Capability tags from OpenRouter metadata (stored in our tags[] column). */
@@ -51,6 +52,25 @@ function deriveTags(m: ORModel): string[] {
 	else if (promptPrice < 0.0000005) tags.push('cheap');
 	else if (promptPrice > 0.000003) tags.push('premium');
 	return [...new Set(tags)];
+}
+
+/** Full metadata projection onto our models columns (pricing left untouched). */
+function metadataRow(m: ORModel, vendorSlug: string, categoryId: string | null) {
+	const mods = m.architecture?.input_modalities ?? ['text'];
+	const outMods = m.architecture?.output_modalities ?? ['text'];
+	return {
+		display_name: m.name ?? m.id,
+		description: m.description ? m.description.slice(0, 500) : null,
+		context_window: m.context_length ?? null,
+		tags: deriveTags(m),
+		input_modalities: mods.length ? mods : ['text'],
+		output_modalities: outMods.length ? outMods : ['text'],
+		supports_reasoning: /reasoning|thinking/i.test(m.id) || !!m.pricing?.internal_reasoning,
+		supports_effort: (m.supported_parameters ?? []).includes('reasoning_effort'),
+		max_output_tokens: m.top_provider?.max_completion_tokens ?? null,
+		vendor_slug: vendorSlug,
+		category_id: categoryId,
+	};
 }
 
 Deno.serve(async (req) => {
@@ -128,6 +148,32 @@ if (req.method === 'OPTIONS') {
 		.eq('provider_id', body.provider_id);
 	const byUpstream = new Map((existing ?? []).map((m) => [m.upstream_model_id, m]));
 
+	// vendor catalog: each upstream id prefix maps to a canonical provider,
+	// and every vendor owns an auto-managed model category
+	const { data: vendors } = await admin.from('ai_providers').select('slug,display_name,prefixes,sort_order');
+	const vendorList = vendors ?? [];
+	function vendorFor(modelId: string): { slug: string; name: string } {
+		const prefix = modelId.split('/')[0] ?? '';
+		const hit = vendorList.find((v) => v.slug !== 'other' && (v.prefixes ?? []).includes(prefix));
+		return hit ? { slug: hit.slug, name: hit.display_name } : { slug: 'other', name: 'Other' };
+	}
+	const categoryIds = new Map<string, string>();
+	async function categoryIdFor(slug: string, name: string, sortOrder: number): Promise<string | null> {
+		const cached = categoryIds.get(slug);
+		if (cached) return cached;
+		const { data: cat } = await admin.from('model_categories')
+			.select('id').eq('name', `vendor:${slug}`).maybeSingle();
+		let id = cat?.id ?? null;
+		if (!id) {
+			const { data: created } = await admin.from('model_categories')
+				.insert({ name: `vendor:${slug}`, icon_url: slug, sort_order: sortOrder })
+				.select('id').single();
+			id = created?.id ?? null;
+		}
+		if (id) categoryIds.set(slug, id);
+		return id;
+	}
+
 	let added = 0, updatedMeta = 0;
 	const rows: any[] = [];
 	const slugSeen = new Map<string, number>(); // track slug collisions
@@ -140,21 +186,24 @@ if (req.method === 'OPTIONS') {
 		slugSeen.set(slug, dup + 1);
 		if (dup > 0) slug = `${slug}-${dup + 1}`; // append suffix on collision
 
-		const row: any = {
-			provider_id: body.provider_id,
-			upstream_model_id: m.id,
-			slug,
-		};
+		const vendor = vendorFor(m.id);
+		const catId = await categoryIdFor(vendor.slug, vendor.name, 50);
 
-		if (isRich) {
-			const orm = m as unknown as ORModel;
-			row.display_name = orm.name ?? orm.id;
-			row.description = orm.description ? orm.description.slice(0, 500) : null;
-			row.context_window = orm.context_length ?? null;
-			row.tags = deriveTags(orm);
-		} else {
-			row.display_name = m.id;
-		}
+		const row: any = isRich
+			? {
+				provider_id: body.provider_id,
+				upstream_model_id: m.id,
+				slug,
+				...metadataRow(m as unknown as ORModel, vendor.slug, catId),
+			}
+			: {
+				provider_id: body.provider_id,
+				upstream_model_id: m.id,
+				slug,
+				display_name: m.id,
+				vendor_slug: vendor.slug,
+				category_id: catId,
+			};
 
 		if (!prev) {
 			row.enabled_for_users = false;
@@ -162,12 +211,19 @@ if (req.method === 'OPTIONS') {
 			rows.push(row);
 			added++;
 		} else if (isRich) {
-			// refresh metadata but preserve admin choices
+			// refresh metadata but preserve admin choices (pricing, enablement)
 			const { error: updErr } = await admin.from('models').update({
 				display_name: row.display_name,
 				description: row.description,
 				context_window: row.context_window,
 				tags: row.tags,
+				input_modalities: row.input_modalities,
+				output_modalities: row.output_modalities,
+				supports_reasoning: row.supports_reasoning,
+				supports_effort: row.supports_effort,
+				max_output_tokens: row.max_output_tokens,
+				vendor_slug: row.vendor_slug,
+				category_id: row.category_id,
 			}).eq('id', prev.id);
 			if (updErr) console.error('metadata update failed', m.id, updErr.message);
 			else updatedMeta++;

@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { Wallet, Repeat, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
 import { ModelUsageTable } from '../../components/ModelUsageTable';
 import { TimeRangeFilter } from '../../components/TimeRangeFilter';
 import { useModelUsage, type TimeRange } from '../../hooks/useModelUsage';
+import { Toggle } from '../../components/console-kit';
 
 interface Sub {
 	expires_at: string;
@@ -20,6 +23,8 @@ export default function Dashboard() {
 	const [expires, setExpires] = useState('—');
 	const [chartData, setChartData] = useState<Array<{ date: string; consumed: number }>>([]);
 	const [range, setRange] = useState<TimeRange>('30d');
+	const [balance, setBalance] = useState<number | null>(null);
+	const [pref, setPref] = useState<'plan_first' | 'wallet_first'>('plan_first');
 	const { data: usage, loading, total } = useModelUsage(range);
 
 	useEffect(() => {
@@ -29,7 +34,7 @@ export default function Dashboard() {
 			setEmail(user.email ?? '');
 
 			const today = new Date().toISOString().slice(0, 10);
-			const [{ data: usage }, { data: sub }] = await Promise.all([
+			const [{ data: usage }, { data: sub }, { data: wallet }, { data: profile }] = await Promise.all([
 				supabase
 					.from('daily_usage')
 					.select('reserved_weighted, consumed_weighted')
@@ -43,6 +48,8 @@ export default function Dashboard() {
 					.eq('status', 'active')
 					.gt('expires_at', new Date().toISOString())
 					.maybeSingle(),
+				supabase.from('wallets').select('balance_usd').eq('user_id', user.id).maybeSingle(),
+				supabase.from('profiles').select('billing_preference').eq('id', user.id).maybeSingle(),
 			]);
 
 			setConsumed(usage?.consumed_weighted ?? 0);
@@ -52,6 +59,8 @@ export default function Dashboard() {
 			setAllowance(allow);
 			setPlanName(s?.plans?.name?.en ?? '—');
 			setExpires(s?.expires_at?.slice(0, 10) ?? '—');
+			setBalance(Number(wallet?.balance_usd ?? 0));
+			setPref((profile?.billing_preference as 'plan_first' | 'wallet_first') ?? 'plan_first');
 
 			// 14-day chart with zero-filled gaps
 			const since = new Date(Date.now() - 13 * 86_400_000).toISOString().slice(0, 10);
@@ -76,9 +85,49 @@ export default function Dashboard() {
 	return (
 		<DashboardShell variant="user" email={email}>
 			<div className="space-y-6">
-				<h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+			<h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
 
-				<div className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-5">
+			{/* wallet + billing mode */}
+			<div className="grid gap-4 sm:grid-cols-2">
+				<Link
+					to="/dashboard/wallet"
+					className="group flex items-center justify-between rounded-xl border border-border bg-[var(--nx-surface)] p-5 transition-colors hover:border-cyan-500/40"
+				>
+					<div>
+						<p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+							<Wallet size={13} /> Wallet balance
+						</p>
+						<p className="mt-1.5 font-data text-2xl font-semibold tabular-nums">
+							{balance == null ? '…' : `$${balance.toFixed(4)}`}
+						</p>
+					</div>
+					<span className="flex items-center gap-1 text-xs text-cyan-400 opacity-0 transition-opacity group-hover:opacity-100">
+						Top up <ArrowRight size={13} className="rtl:rotate-180" />
+					</span>
+				</Link>
+				<div className="flex items-center justify-between rounded-xl border border-border bg-[var(--nx-surface)] p-5">
+					<div>
+						<p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+							<Repeat size={13} /> Billing mode
+						</p>
+						<p className="mt-1.5 text-sm font-medium">
+							{pref === 'wallet_first' ? 'Pay-As-You-Go first' : 'Plan quota first'}
+						</p>
+					</div>
+					<Toggle
+						checked={pref === 'wallet_first'}
+						onChange={async (v) => {
+							const next = v ? 'wallet_first' : 'plan_first';
+							setPref(next);
+							const { data: { user } } = await supabase.auth.getUser();
+							if (user) await supabase.from('profiles').update({ billing_preference: next }).eq('id', user.id);
+						}}
+						labels={['Plan', 'PAYG']}
+					/>
+				</div>
+			</div>
+
+			<div className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-5">
 					<div className="mb-2 flex items-center justify-between text-sm">
 						<span className="font-medium">Today's quota</span>
 						<span className="tabular-nums text-[var(--nx-muted)]">

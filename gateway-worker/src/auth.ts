@@ -15,6 +15,10 @@ export interface AuthContext {
 	allowed_models: string[] | null; // plan model ids, null if plan has none configured
 	api_allowed_models: string[] | null;
 	rate_limit_per_min: number;
+	wallet_balance_usd: string | null; // numeric comes back as string over JSON
+	billing_preference: 'plan_first' | 'wallet_first' | null;
+	spend_limit_usd: string | null;
+	total_spent_usd: string | null;
 	/** true = GitHub user whose account is younger than the configured minimum → locked */
 	is_pending: boolean;
 }
@@ -55,20 +59,18 @@ export async function authenticate(request: Request): Promise<AuthResult> {
 	if (!ctx) {
 		return { ok: false, status: 401, code: 'invalid_api_key', message: 'Unknown or revoked key' };
 	}
-	if (!ctx.subscription_status || ctx.subscription_status !== 'active') {
+	// A key is usable with EITHER an active subscription (plan quota) OR a
+	// funded wallet (Pay-As-You-Go). The definitive mode decision — and the
+	// rejection when neither is possible — happens inside reserve_request.
+	const hasPlan = ctx.subscription_status === 'active'
+		&& (!ctx.plan_expires_at || new Date(ctx.plan_expires_at).getTime() > Date.now());
+	const hasCredit = Number(ctx.wallet_balance_usd ?? 0) > 0;
+	if (!hasPlan && !hasCredit) {
 		return {
 			ok: false,
 			status: 403,
-			code: 'subscription_inactive',
-			message: 'No active subscription. Purchase a plan to use the API.',
-		};
-	}
-	if (ctx.plan_expires_at && new Date(ctx.plan_expires_at).getTime() <= Date.now()) {
-		return {
-			ok: false,
-			status: 403,
-			code: 'plan_expired',
-			message: 'Plan expired. Renew to continue.',
+			code: 'no_active_plan',
+			message: 'No active subscription or wallet credit. Purchase a plan or top up your wallet.',
 		};
 	}
 

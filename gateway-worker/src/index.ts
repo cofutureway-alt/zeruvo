@@ -9,7 +9,7 @@
  */
 import { setEnv } from './db';
 import { authenticate } from './auth';
-import { estimateTokens, reserve, settle, type Reservation } from './quota';
+import { estimateTokens, reserve, settle, costUsd, type Reservation, type UsageBreakdown } from './quota';
 import {
   fromOpenAI,
   fromAnthropic,
@@ -39,14 +39,26 @@ export interface Env {
   GATEWAY_HEADER_WAIT_LATER_MS?: string;
 }
 
-interface ModelInfo {
+/** Row shape of the resolve_model_v2 RPC. */
+interface ResolvedModel {
   model_id: string;
   provider_id: string;
   provider_kind: string; // custom | openrouter
   provider_base_url: string;
+  /** id actually sent upstream — custom models route via their parent */
+  upstream_id: string;
   usage_multiplier: string;
   context_window: number | null;
   enabled: boolean;
+  system_prompt: string | null; // custom models only
+  payg_enabled: boolean;
+  price_in: string | null;
+  price_out: string | null;
+  price_cache_read: string | null;
+  price_cache_write: string | null;
+  discount_percent: string | null;
+  display_name: string;
+  vendor_slug: string | null;
 }
 
 import { setEnv as setEnvDb, postgrestRpc } from './db';
@@ -111,17 +123,20 @@ export default {
 };
 
 /**
- * Make pre-commit rejections visible in request_logs. Reuses settle_quota's
+ * Make pre-commit rejections visible in request_logs. Reuses settle_usage's
  * log branch with zero amounts — the daily_usage update becomes a no-op and
  * exactly one audit row lands (user_id is NOT NULL, so this is only callable
  * after auth succeeded). Fire-and-forget: a dead DB can't fail the response
  * twice.
  */
 function logRejection(ctx: ExecutionContext, userId: string, startedAt: number, extra: Record<string, unknown>): void {
-  ctx.waitUntil(postgrestRpc('settle_quota', {
+  ctx.waitUntil(postgrestRpc('settle_usage', {
     p_user_id: userId,
-    p_reserved_amount: 0,
+    p_mode: 'plan',
+    p_hold_usd: 0,
+    p_reserved_weighted: 0,
     p_actual_weighted: 0,
+    p_actual_cost_usd: 0,
     p_log: {
       tokens_in: 0,
       tokens_out: 0,
@@ -192,12 +207,14 @@ async function handleChat(
   const rawBody = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!rawBody) return json({ error: { type: 'bad_request', message: 'Invalid JSON' } }, 400);
 
-  // model resolution (retryable on DB blips)
-  const upstreamModel0 = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
-  const resolvedRaw = await postgrestRpc<ModelInfo[]>('resolve_model', { p_upstream_model: upstreamModel0 }, { retry: true })
+  // model resolution (retryable on DB blips). Custom (aliased) models carry
+  // their own public id in upstream_model_id and resolve to the parent's
+  // provider + upstream id + an optional system prompt.
+  const requestedModel = clientWire === 'gemini' ? (geminiModel ?? '') : String(rawBody.model ?? '');
+  const resolvedRaw = await postgrestRpc<ResolvedModel[]>('resolve_model_v2', { p_upstream_model: requestedModel }, { retry: true })
     .then((rows) => rows ?? [])
     .catch((e) => {
-      console.error('resolve_model rpc failed', e);
+      console.error('resolve_model_v2 rpc failed', e);
       return null;
     });
   if (resolvedRaw === null) {
@@ -206,14 +223,20 @@ async function handleChat(
   }
   const resolved = resolvedRaw[0];
   if (!resolved) {
-    logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 404, error_code: 'model_not_found', upstream_model: upstreamModel0 });
-    return json({ error: { type: 'model_not_found', message: `Unknown model ${upstreamModel0}` } }, 404);
+    logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 404, error_code: 'model_not_found', upstream_model: requestedModel });
+    return json({ error: { type: 'model_not_found', message: `Unknown model ${requestedModel}` } }, 404);
   }
   if (!resolved.enabled) {
-    logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_disabled', model_id: resolved.model_id, upstream_model: upstreamModel0 });
+    logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_disabled', model_id: resolved.model_id, upstream_model: requestedModel });
     return json({ error: { type: 'model_disabled', message: 'Model not available' } }, 403);
   }
   const multiplier = Number(resolved.usage_multiplier) || 1;
+  const paygPrices = {
+    in: resolved.price_in != null ? Number(resolved.price_in) : null,
+    out: resolved.price_out != null ? Number(resolved.price_out) : null,
+    cacheRead: resolved.price_cache_read != null ? Number(resolved.price_cache_read) : null,
+    cacheWrite: resolved.price_cache_write != null ? Number(resolved.price_cache_write) : null,
+  };
 
   // parse the body with the adapter matching the CLIENT's wire format —
   // Anthropic/Gemini natives carry system prompts and tool schemas in
@@ -227,7 +250,14 @@ async function handleChat(
   // Gemini streaming comes from the URL verb (?alt=sse / :streamGenerateContent),
   // never from a JSON field — honor it explicitly
   if (clientWire === 'gemini' && geminiWantsStream) neutral.stream = true;
-  const upstreamModel = clientWire === 'gemini' ? (geminiModel ?? neutral.model) : neutral.model;
+
+  // custom-model rewrite: route to the parent's upstream id and prepend the
+  // admin-defined system prompt (client prompt is kept, custom prompt first)
+  neutral.model = resolved.upstream_id;
+  if (resolved.system_prompt) {
+    neutral.system = resolved.system_prompt + (neutral.system ? '\n' + neutral.system : '');
+  }
+  const upstreamModel = resolved.upstream_id;
 
   // plan/model gating
   const allowed = auth.ctx.allowed_models ?? [];
@@ -256,17 +286,17 @@ async function handleChat(
     [reservation, dek] = await Promise.all([
       reserve(
         auth.ctx.user_id,
-        multiplier,
+        auth.ctx.api_key_id,
+        resolved.model_id,
         est.inputEstimate,
         est.outputEstimate,
-        auth.ctx.plan_daily_weighted ? Number(auth.ctx.plan_daily_weighted) : null,
       ),
       importDek(envNow().NEXOR_ENCRYPTION_KEY),
     ]);
   } catch (e) {
-    // reserve re-throws anything that isn't a quota/no-plan verdict → the
-    // DB is unhealthy. Fail visibly, and never blindly retry the call:
-    // reserve_quota's SQL is a non-idempotent "+estimate".
+    // reserve re-throws anything that isn't a billing verdict → the DB is
+    // unhealthy. Fail visibly, and never blindly retry the call:
+    // reserve_request's SQL is a non-idempotent hold.
     console.error('reserve failed', e);
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 503, error_code: 'gateway_dependency_error', model_id: resolved.model_id, upstream_model: upstreamModel });
     return dependency503();
@@ -310,14 +340,20 @@ async function handleChat(
 
   ctx.waitUntil(
     outcome
-      .then((o) =>
-        settleAfter(resv, billFor(o, est, neutral.stream), {
+      .then((o) => {
+        const usage = usageBreakdownFor(o, est, neutral.stream);
+        const weighted = resv.mode === 'plan'
+          ? Math.ceil((usage.tokensIn + usage.tokensOut) * multiplier)
+          : 0;
+        const cost = resv.mode === 'wallet' ? costUsd(usage, paygPrices) : 0;
+        return settleAfter(resv, weighted, cost, {
           api_key_id: auth.ctx.api_key_id,
           model_id: resolved.model_id,
-          upstream_model: upstreamModel,
-          ...logMeta(o, startedAt, neutral.stream, est),
-        }),
-      )
+          // log the id the CLIENT asked for — custom models show their new name
+          upstream_model: requestedModel,
+          ...logMeta(o, startedAt, usage),
+        });
+      })
       .catch((e) => console.error('settle failed', e)),
   );
 
@@ -328,38 +364,52 @@ async function handleChat(
 }
 
 /**
- * Settlement policy (anti-quota-burn), unchanged from before failover:
+ * Settlement policy (anti-quota-burn), unchanged in spirit:
  *  1. total failure before any content, or client-gone with 0 bytes → 0
- *  2. provider reported usage → actual tokens
+ *  2. provider reported usage → actual tokens (+ cache split)
  *  3. otherwise → provable volume only: input estimate + streamed bytes / 4.
  *     The speculative output estimate is NEVER billed.
+ * The same breakdown feeds the request log, the weighted quota and the
+ * PAYG USD cost, so tokens and money can never disagree.
  */
-function billFor(
+function usageBreakdownFor(
   o: FailoverOutcome,
   est: { inputEstimate: number; outputEstimate: number },
   stream: boolean,
-): number {
-  if (o.finalError && o.streamedBytes === 0) return 0;
+): UsageBreakdown {
+  const zero: UsageBreakdown = { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0 };
+  if (o.finalError && o.streamedBytes === 0) return zero;
   const usage = o.usage;
-  if (usage && (usage.input > 0 || usage.output > 0)) return usage.input + usage.output;
-  if (!stream && o.finalError) return 0;
-  return est.inputEstimate + Math.ceil(o.streamedBytes / 4);
+  if (usage && (usage.input > 0 || usage.output > 0)) {
+    return {
+      tokensIn: usage.input,
+      tokensOut: usage.output,
+      cacheRead: usage.cacheRead ?? 0,
+      cacheWrite: usage.cacheWrite ?? 0,
+    };
+  }
+  if (!stream && o.finalError) return zero;
+  return {
+    tokensIn: est.inputEstimate,
+    tokensOut: Math.ceil(o.streamedBytes / 4),
+    cacheRead: 0,
+    cacheWrite: 0,
+  };
 }
 
 /** request_logs fields — same status/error_code vocabulary as before failover */
 function logMeta(
   o: FailoverOutcome,
   startedAt: number,
-  stream: boolean,
-  est: { inputEstimate: number; outputEstimate: number },
+  usage: UsageBreakdown,
 ): Record<string, unknown> {
-  const usage = o.usage;
-  const tokensOut = usage?.output ?? Math.ceil(o.streamedBytes / 4);
   const base: Record<string, unknown> = {
     latency_ms: Date.now() - startedAt,
-    tokens_in: usage?.input ?? (o.streamedBytes > 0 ? est.inputEstimate : 0),
-    tokens_out: tokensOut,
-    cache_read_tokens: usage?.cacheRead ?? 0,
+    ttft_ms: o.ttftMs ?? null,
+    tokens_in: usage.tokensIn,
+    tokens_out: usage.tokensOut,
+    cache_read_tokens: usage.cacheRead,
+    cache_write_tokens: usage.cacheWrite,
   };
   if (o.finalError) {
     const statusMap: Record<string, number> = {
@@ -384,7 +434,7 @@ function logMeta(
         ? 'gateway_timeout'
         : o.aborted
           ? 'upstream_disconnected'
-          : !usage && stream
+          : !o.usage
             ? 'usage_unreported'
             : null,
     ...base,
@@ -468,8 +518,21 @@ async function listModels(request: Request): Promise<Response> {
     return json({ error: { type: auth.code, message: auth.message } }, auth.status);
   }
 
-  const enabled = await postgrestQuery<Array<{ id: string; upstream_model_id: string; context_window: number | null; display_name: string }>>(
-    'models?enabled_for_users=eq.true&select=id,upstream_model_id,context_window,display_name',
+  const enabled = await postgrestQuery<Array<{
+    id: string;
+    upstream_model_id: string;
+    context_window: number | null;
+    display_name: string;
+    vendor_slug: string | null;
+    payg_enabled: boolean;
+    input_price_per_m: string | null;
+    output_price_per_m: string | null;
+    input_modalities: string[] | null;
+    output_modalities: string[] | null;
+    supports_reasoning: boolean;
+  }>>(
+    'models?enabled_for_users=eq.true'
+    + '&select=id,upstream_model_id,context_window,display_name,vendor_slug,payg_enabled,input_price_per_m,output_price_per_m,input_modalities,output_modalities,supports_reasoning',
   );
   // plan gating: allowed_models is the plan's model list; empty = no
   // restriction, so every enabled model is listed.
@@ -479,9 +542,21 @@ async function listModels(request: Request): Promise<Response> {
     .map((m) => ({
       id: m.upstream_model_id,
       object: 'model',
-      owned_by: m.upstream_model_id.split('/')[0] ?? 'nexor',
+      owned_by: m.vendor_slug ?? m.upstream_model_id.split('/')[0] ?? 'nexor',
       context_length: m.context_window ?? undefined,
       display_name: m.display_name,
+      // PAYG list price (before active discounts) for agent-side cost display
+      pricing: m.payg_enabled
+        ? {
+            prompt: m.input_price_per_m != null ? `$${Number(m.input_price_per_m).toFixed(2)}/M` : undefined,
+            completion: m.output_price_per_m != null ? `$${Number(m.output_price_per_m).toFixed(2)}/M` : undefined,
+          }
+        : undefined,
+      capabilities: {
+        input_modalities: m.input_modalities ?? ['text'],
+        output_modalities: m.output_modalities ?? ['text'],
+        reasoning: m.supports_reasoning,
+      },
     }));
   return Response.json({ object: 'list', data });
 }
@@ -517,17 +592,19 @@ function json(obj: unknown, status: number): Response {
 
 async function settleAfter(
   resv: Reservation,
-  rawBill: number,
+  weightedBill: number,
+  costBill: number,
   logExtra: Record<string, unknown>,
 ): Promise<void> {
   try {
-    await settle(resv, rawBill, {
+    await settle(resv, weightedBill, costBill, {
       ...logExtra,
       // callers always provide tokens_in/tokens_out/cache_read_tokens in
       // logExtra — default to 0 only if omitted
       tokens_in: logExtra.tokens_in ?? 0,
       tokens_out: logExtra.tokens_out ?? 0,
       cache_read_tokens: logExtra.cache_read_tokens ?? 0,
+      cache_write_tokens: logExtra.cache_write_tokens ?? 0,
     });
   } catch (err) {
     console.error('settle failed', err);

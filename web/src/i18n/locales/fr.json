@@ -28,7 +28,10 @@
 		"pendingTitle": "Compte en attente",
 		"pendingBody": "Votre compte GitHub est plus récent que l'âge minimum requis par ce site ({{days}} jour(s)). L'accès sera débloqué automatiquement dès que votre compte GitHub sera assez ancien.",
 		"pendingUntil": "Accès débloqué le {{date}}",
-		"pendingRecheck": "Revérifier"
+		"pendingRecheck": "Revérifier",
+		"continueWithGoogle": "Continuer avec Google",
+		"captchaTitle": "Vérification humaine",
+		"captchaRequired": "Veuillez compléter la vérification humaine."
 	},
 	"dashboard": {
 		"title": "Tableau de bord",

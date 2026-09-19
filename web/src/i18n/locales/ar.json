@@ -28,7 +28,10 @@
 		"pendingTitle": "الحساب قيد الانتظار",
 		"pendingBody": "حسابك على GitHub أحدث من الحد الأدنى للم возраст الذي يطلبه الموقع ({{days}} يوم). سيتم فتح الوصول تلقائيًا عندما يصل حسابك للعمر المطلوب.",
 		"pendingUntil": "يُفتح الوصول في {{date}}",
-		"pendingRecheck": "إعادة الفحص"
+		"pendingRecheck": "إعادة الفحص",
+		"continueWithGoogle": "المتابعة باستخدام Google",
+		"captchaTitle": "التحقق البشري",
+		"captchaRequired": "يرجى إكمال التحقق البشري."
 	},
 	"dashboard": {
 		"title": "لوحة التحكم",

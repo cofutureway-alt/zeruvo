@@ -28,7 +28,10 @@
 		"pendingTitle": "Account pending",
 		"pendingBody": "Your GitHub account is newer than the minimum age this site requires ({{days}} day(s)). Access unlocks automatically once your GitHub account is old enough.",
 		"pendingUntil": "Access unlocks on {{date}}",
-		"pendingRecheck": "Recheck"
+		"pendingRecheck": "Recheck",
+		"continueWithGoogle": "Continue with Google",
+		"captchaTitle": "Human verification",
+		"captchaRequired": "Please complete the human-verification check."
 	},
 	"dashboard": {
 		"title": "Dashboard",

@@ -156,6 +156,18 @@ if (req.method === 'OPTIONS') {
 			result = { revoked: true };
 			break;
 		}
+		case 'adjust_wallet': {
+			const amount = Number(body.amount_usd);
+			if (!Number.isFinite(amount) || amount === 0) { error = 'amount_usd must be a non-zero number'; break; }
+			const { data: newBalance, error: walletErr } = await admin.rpc('wallet_admin_adjust', {
+				p_user_id: targetId,
+				p_amount_usd: Math.round(amount * 1000000) / 1000000,
+				p_note: typeof body.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 200) : null,
+			});
+			if (walletErr) { error = walletErr.message; break; }
+			result = { balance_usd: newBalance };
+			break;
+		}
 		default:
 			return Response.json({ error: `unknown action ${action}` }, { status: 400, headers: CORS_HEADERS })
 	}

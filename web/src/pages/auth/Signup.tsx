@@ -2,9 +2,13 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, Check } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, Check, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { GithubIcon } from '../../components/GithubIcon';
+import { GoogleIcon } from '../../components/GoogleIcon';
+import { Turnstile } from '../../components/Turnstile';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { signInWithGoogle } from '../../lib/google-auth';
 import { useAuth } from '../../auth-context';
 import AuthLayout from './AuthLayout';
 
@@ -29,6 +33,9 @@ export default function Signup() {
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [done, setDone] = useState(false);
+	const [captchaToken, setCaptchaToken] = useState('');
+	const settings = useAppSettings();
+	const needCaptcha = !!settings?.turnstile_enabled && !!settings.turnstile_on_login;
 	const anim = !reduced;
 
 	async function onSubmit(e: React.FormEvent) {
@@ -37,9 +44,17 @@ export default function Signup() {
 			setError(t('auth.passwordMismatch'));
 			return;
 		}
+		if (needCaptcha && !captchaToken) {
+			setError(t('auth.captchaRequired') ?? 'Please complete the human-verification check.');
+			return;
+		}
 		setBusy(true);
 		setError(null);
-		const { error: err } = await supabase.auth.signUp({ email, password });
+		const { error: err } = await supabase.auth.signUp({
+			email,
+			password,
+			...(needCaptcha ? { options: { captchaToken } } : {}),
+		});
 		if (err) {
 			setError(err.message.includes('already') ? t('auth.emailInUse') : err.message);
 			setBusy(false);
@@ -60,6 +75,19 @@ export default function Signup() {
 			setError(err.message);
 			setBusy(false);
 		}
+	}
+
+	async function continueWithGoogle() {
+		if (!settings?.google_auth_enabled) return;
+		setBusy(true);
+		setError(null);
+		const res = await signInWithGoogle(settings.firebase_config);
+		if (res.error) {
+			setError(res.error);
+			setBusy(false);
+			return;
+		}
+		navigate('/dashboard', { replace: true });
 	}
 
 	const signupClosed = signupMode === 'disabled';
@@ -111,6 +139,19 @@ export default function Signup() {
 									<GithubIcon size={16} />
 									{t('auth.continueWithGithub')}
 								</motion.button>
+								{settings?.google_auth_enabled && (
+									<motion.button
+										type="button"
+										onClick={continueWithGoogle}
+										disabled={busy}
+										whileHover={anim ? { scale: 1.01 } : undefined}
+										whileTap={anim ? { scale: 0.98 } : undefined}
+										className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
+									>
+										<GoogleIcon size={16} />
+										{t('auth.continueWithGoogle')}
+									</motion.button>
+								)}
 								{signupMode !== 'github_only' && (
 								<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
 									<span className="h-px flex-1 bg-[var(--nx-border)]" />
@@ -200,6 +241,17 @@ export default function Signup() {
 										</motion.p>
 									)}
 								</AnimatePresence>
+
+								{/* Turnstile human verification (admin-configured) */}
+								{needCaptcha && (
+									<motion.div {...field(reduced, 3)} className="rounded-xl border border-[var(--nx-border)] p-3">
+										<p className="mb-2 flex items-center gap-1.5 text-xs text-[var(--nx-muted)]">
+											<ShieldCheck size={13} className="text-cyan-400" />
+											{t('auth.captchaTitle') ?? 'Human verification'}
+										</p>
+										<Turnstile siteKey={settings!.turnstile_site_key} onToken={setCaptchaToken} />
+									</motion.div>
+								)}
 
 								{/* submit */}
 								<motion.div {...field(reduced, 4)}>

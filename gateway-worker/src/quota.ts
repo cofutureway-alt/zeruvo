@@ -1,13 +1,21 @@
 /**
- * Atomic quota reservation against the Postgres engine (reserve_quota RPC).
- * Estimate = weighted input tokens + max_tokens × multiplier headroom;
- * settled to actual usage after the provider responds.
+ * Atomic billing engine client.
+ *
+ * reserve  → reserve_request RPC: durable per-user-per-model rate-limit
+ *            counters, then the billing-mode decision (plan quota vs wallet
+ *            PAYG) with an atomic reservation (quota hold or USD hold).
+ * settle   → settle_usage RPC: releases the hold and commits the actual
+ *            spend (weighted tokens on plan, USD on wallet), writing the
+ *            request_logs row with the cost.
  */
 import { postgrestRpc, RpcError } from './db';
 
 export interface Reservation {
 	user_id: string;
-	reserved_amount: number;
+	/** 'plan' = weighted-token quota, 'wallet' = USD Pay-As-You-Go */
+	mode: 'plan' | 'wallet';
+	reserved_weighted: number;
+	hold_usd: number;
 	multiplier: number;
 }
 
@@ -40,32 +48,36 @@ export type ReserveResult =
  * now lives only in the request's own closure — index.ts settles it via
  * settleAfter(reservation, …) or the local error handler.
  */
-
 export async function reserve(
 	userId: string,
-	multiplier: number,
+	apiKeyId: string,
+	modelId: string,
 	inputEstimate: number,
 	outputEstimate: number,
-	dailyAllowance?: number | null,
 ): Promise<ReserveResult> {
-	let estimate = Math.ceil((inputEstimate + outputEstimate) * multiplier);
-
-	// Cap the reservation at a fraction of the daily allowance so a huge
-	// prompt on a high-multiplier model can't eat most of the day's quota
-	// in one speculative estimate (settlement bills actual usage anyway).
-	const CAP_FRACTION = 0.2;
-	if (dailyAllowance && dailyAllowance > 0) {
-		estimate = Math.min(estimate, Math.ceil(dailyAllowance * CAP_FRACTION));
-	}
-
 	try {
-		await postgrestRpc('reserve_quota', {
+		const row = await postgrestRpc<Record<string, unknown>>('reserve_request', {
 			p_user_id: userId,
-			p_estimate_weighted: estimate,
+			p_api_key_id: apiKeyId,
+			p_model_id: modelId,
+			p_est_tokens_in: inputEstimate,
+			p_est_tokens_out: outputEstimate,
 		});
-		return { ok: true, reservation: { user_id: userId, reserved_amount: estimate, multiplier } };
+		if (!row) throw new Error('reserve_request returned no row');
+		return {
+			ok: true,
+			reservation: {
+				user_id: userId,
+				mode: row.mode === 'wallet' ? 'wallet' : 'plan',
+				reserved_weighted: Number(row.reserved_weighted ?? 0),
+				hold_usd: Number(row.hold_usd ?? 0),
+				multiplier: Number(row.multiplier ?? 1),
+			},
+		};
 	} catch (err) {
-		if (err instanceof RpcError && err.body.includes('QUOTA_EXCEEDED')) {
+		if (!(err instanceof RpcError)) throw err;
+		const body = err.body;
+		if (body.includes('QUOTA_EXCEEDED')) {
 			return {
 				ok: false,
 				status: 429,
@@ -73,19 +85,85 @@ export async function reserve(
 				message: 'Daily quota exhausted. Resets at 00:00 UTC.',
 			};
 		}
-		if (err instanceof RpcError && err.body.includes('NO_ACTIVE_PLAN')) {
-			return { ok: false, status: 403, code: 'no_active_plan', message: 'No active plan' };
+		if (body.includes('NO_ACTIVE_PLAN')) {
+			return {
+				ok: false,
+				status: 403,
+				code: 'no_active_plan',
+				message: 'No active subscription or wallet credit. Purchase a plan or top up your wallet.',
+			};
+		}
+		if (body.includes('MODEL_NOT_INCLUDED')) {
+			return {
+				ok: false,
+				status: 403,
+				code: 'model_not_in_plan',
+				message: 'This model is not in your plan and has no Pay-As-You-Go price.',
+			};
+		}
+		if (body.includes('INSUFFICIENT_CREDITS')) {
+			return {
+				ok: false,
+				status: 402,
+				code: 'insufficient_credits',
+				message: 'Wallet balance too low for this request. Top up your wallet to continue.',
+			};
+		}
+		if (body.includes('SPEND_LIMIT_REACHED')) {
+			return {
+				ok: false,
+				status: 402,
+				code: 'spend_limit_reached',
+				message: 'This API key reached its spending limit.',
+			};
+		}
+		if (body.includes('MODEL_RATE_LIMITED')) {
+			const which = body.split(':')[1] ?? '';
+			return {
+				ok: false,
+				status: 429,
+				code: 'model_rate_limited',
+				message: `Model rate limit exceeded (${which || 'window'}). Slow down and retry.`,
+			};
 		}
 		throw err;
 	}
 }
 
-export async function settle(res: Reservation, actualRaw: number, logExtra: Record<string, unknown>) {
-	const actualWeighted = Math.ceil(actualRaw * res.multiplier);
-	await postgrestRpc('settle_quota', {
+export interface UsageBreakdown {
+	tokensIn: number;
+	tokensOut: number;
+	cacheRead: number;
+	cacheWrite: number;
+}
+
+/** PAYG cost in USD from effective (post-discount) per-1M prices. */
+export function costUsd(
+	u: UsageBreakdown,
+	prices: { in?: number | null; out?: number | null; cacheRead?: number | null; cacheWrite?: number | null },
+): number {
+	const raw =
+		(prices.in ?? 0) * u.tokensIn +
+		(prices.out ?? 0) * u.tokensOut +
+		(prices.cacheRead ?? 0) * u.cacheRead +
+		(prices.cacheWrite ?? 0) * u.cacheWrite;
+	// micro-dollar rounding: never rounds in the customer's favor
+	return Math.ceil(raw * 1_000_000) / 1_000_000;
+}
+
+export async function settle(
+	res: Reservation,
+	actualWeighted: number,
+	actualCostUsd: number,
+	logExtra: Record<string, unknown>,
+): Promise<void> {
+	await postgrestRpc('settle_usage', {
 		p_user_id: res.user_id,
-		p_reserved_amount: res.reserved_amount,
+		p_mode: res.mode,
+		p_hold_usd: res.hold_usd,
+		p_reserved_weighted: res.reserved_weighted,
 		p_actual_weighted: actualWeighted,
+		p_actual_cost_usd: res.mode === 'wallet' ? actualCostUsd : 0,
 		p_log: logExtra,
 	});
 }

@@ -46,10 +46,9 @@ try {
 	const { data: { user } } = await supabase.auth.getUser();
 	if (!user) return Response.json({ error: 'unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-	let body: { plan_id?: string; coupon_code?: string; renew?: boolean };
+	let body: { type?: 'plan' | 'topup'; plan_id?: string; amount_usd?: number; coupon_code?: string; renew?: boolean };
 	try { body = await req.json(); } catch { return Response.json({ error: 'invalid json' }, { status: 400, headers: CORS_HEADERS }) }
-	if (!body.plan_id) return Response.json({ error: 'plan_id required' }, { status: 400, headers: CORS_HEADERS })
-	const renew = Boolean(body.renew);
+	const kind = body.type === 'topup' ? 'topup' : 'plan';
 
 	const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -59,80 +58,112 @@ try {
 		return Response.json({ error: 'Payment gateway not configured' }, { status: 503, headers: CORS_HEADERS })
 	}
 
-	// Renewals may target a plan that is currently hidden from the catalog
-	// (active=false) as long as the subscriber's own plan is renewable, so we
-	// key the lookup on id only and validate activity/renewability after.
-	const { data: plan } = await admin.from('plans')
-		.select('id,name,price_usd,is_free,active,renewable').eq('id', body.plan_id).single();
-	if (!plan) return Response.json({ error: 'plan not found' }, { status: 404, headers: CORS_HEADERS })
-	if (plan.is_free || Number(plan.price_usd) === 0) {
-		return Response.json({ error: 'plan is free — no checkout needed' }, { status: 400, headers: CORS_HEADERS })
-	}
-
-	// A new purchase requires an active (catalog-visible) plan.
-	if (!renew && !plan.active) {
-		return Response.json({ error: 'plan is no longer available' }, { status: 404, headers: CORS_HEADERS })
-	}
-	// Renewal requires the plan to be renewable and the user to currently hold
-	// an active subscription to it — otherwise nothing to renew.
-	let previousExpiresAt: string | null = null;
-	if (renew) {
-		if (!plan.renewable) {
-			return Response.json({ error: 'this plan is not renewable' }, { status: 403, headers: CORS_HEADERS })
-		}
-		const { data: sub } = await admin.from('subscriptions')
-			.select('expires_at').eq('user_id', user.id).eq('plan_id', body.plan_id)
-			.eq('status', 'active').gt('expires_at', new Date().toISOString())
-			.order('expires_at', { ascending: false }).limit(1).maybeSingle();
-		if (!sub) {
-			return Response.json({ error: 'no active subscription to renew' }, { status: 403, headers: CORS_HEADERS })
-		}
-		previousExpiresAt = sub.expires_at;
-	}
-
-	// ---------- coupon validation (server-side source of truth) ----------
-	const couponCode = String(body.coupon_code ?? '').trim().toUpperCase();
-	let discountPct = 0;
-	let appliedCoupon: string | null = null;
-	if (couponCode) {
-		const { data: coupon, error: couponErr } = await admin.from('coupons')
-			.select('*').eq('code', couponCode).eq('active', true).maybeSingle();
-		if (couponErr) {
-			console.error('coupon query error:', JSON.stringify(couponErr));
-			return Response.json({ error: 'coupon lookup failed' }, { status: 500, headers: CORS_HEADERS })
-		}
-		const now = new Date();
-		if (
-			coupon &&
-			new Date(coupon.valid_from) <= now &&
-			new Date(coupon.valid_to) > now &&
-			coupon.times_redeemed < coupon.max_redemptions
-		) {
-			// H5 fix: enforce per-user limit (one use per customer) at checkout
-			// so the same user cannot re-apply a coupon they already redeemed.
-			const { data: already } = await admin.from('coupon_redemptions')
-				.select('id')
-				.eq('coupon_code', coupon.code)
-				.eq('user_id', user.id)
-				.maybeSingle();
-			if (already) {
-				return Response.json({ error: 'Coupon already used by this customer' }, { status: 400, headers: CORS_HEADERS })
-			}
-			discountPct = Number(coupon.percent_off);
-			appliedCoupon = coupon.code;
-		} else {
-			return Response.json({ error: 'Invalid, expired, or exhausted coupon' }, { status: 400, headers: CORS_HEADERS })
-		}
-	}
-
-	const priceUsd = Number(plan.price_usd);
-	const finalUsd = Math.max(priceUsd * (1 - discountPct / 100), 0.5); // Kashier min charge guard
-
-	// convert USD → EGP using the gateway-configured exchange rate
 	const egpRate = Number(gw.egp_rate ?? 50);
-	const finalEgp = Math.round(finalUsd * egpRate * 100) / 100; // 2 decimal places
+	let finalUsd: number;
+	let orderId: string;
+	// plan-path values (hoisted for the payment insert below)
+	let planMeta: Record<string, unknown> = {};
+	let couponCodeCol: string | null = null;
 
-	const orderId = `nx-${user.id.slice(0, 8)}-${body.plan_id.slice(0, 8)}-${Date.now().toString(36)}`;
+	if (kind === 'topup') {
+		// ---- wallet top-up: server-validated amount within admin bounds ----
+		const { data: settings } = await admin.from('app_settings').select('wallet_min_topup_usd,wallet_max_topup_usd').eq('id', 1).maybeSingle();
+		const minUsd = Number(settings?.wallet_min_topup_usd ?? 10);
+		const maxUsd = Number(settings?.wallet_max_topup_usd ?? 200);
+		const amount = Number(body.amount_usd);
+		if (!Number.isFinite(amount) || amount < minUsd || amount > maxUsd) {
+			return Response.json({ error: `amount_usd must be between ${minUsd} and ${maxUsd}` }, { status: 400, headers: CORS_HEADERS })
+		}
+		finalUsd = Math.round(amount * 100) / 100;
+		orderId = `nx-top-${user.id.slice(0, 8)}-${Date.now().toString(36)}`;
+	} else {
+		if (!body.plan_id) return Response.json({ error: 'plan_id required' }, { status: 400, headers: CORS_HEADERS })
+		const renew = Boolean(body.renew);
+
+		// Renewals may target a plan that is currently hidden from the catalog
+		// (active=false) as long as the subscriber's own plan is renewable, so we
+		// key the lookup on id only and validate activity/renewability after.
+		const { data: plan } = await admin.from('plans')
+			.select('id,name,price_usd,is_free,active,renewable').eq('id', body.plan_id).single();
+		if (!plan) return Response.json({ error: 'plan not found' }, { status: 404, headers: CORS_HEADERS })
+		if (plan.is_free || Number(plan.price_usd) === 0) {
+			return Response.json({ error: 'plan is free — no checkout needed' }, { status: 400, headers: CORS_HEADERS })
+		}
+
+		// A new purchase requires an active (catalog-visible) plan.
+		if (!renew && !plan.active) {
+			return Response.json({ error: 'plan is no longer available' }, { status: 404, headers: CORS_HEADERS })
+		}
+		// Renewal requires the plan to be renewable and the user to currently hold
+		// an active subscription to it — otherwise nothing to renew.
+		let previousExpiresAt: string | null = null;
+		if (renew) {
+			if (!plan.renewable) {
+				return Response.json({ error: 'this plan is not renewable' }, { status: 403, headers: CORS_HEADERS })
+			}
+			const { data: sub } = await admin.from('subscriptions')
+				.select('expires_at').eq('user_id', user.id).eq('plan_id', body.plan_id)
+				.eq('status', 'active').gt('expires_at', new Date().toISOString())
+				.order('expires_at', { ascending: false }).limit(1).maybeSingle();
+			if (!sub) {
+				return Response.json({ error: 'no active subscription to renew' }, { status: 403, headers: CORS_HEADERS })
+			}
+			previousExpiresAt = sub.expires_at;
+		}
+
+		// ---------- coupon validation (server-side source of truth) ----------
+		const couponCode = String(body.coupon_code ?? '').trim().toUpperCase();
+		let discountPct = 0;
+		let appliedCoupon: string | null = null;
+		if (couponCode) {
+			const { data: coupon, error: couponErr } = await admin.from('coupons')
+				.select('*').eq('code', couponCode).eq('active', true).maybeSingle();
+			if (couponErr) {
+				console.error('coupon query error:', JSON.stringify(couponErr));
+				return Response.json({ error: 'coupon lookup failed' }, { status: 500, headers: CORS_HEADERS })
+			}
+			const now = new Date();
+			if (
+				coupon &&
+				new Date(coupon.valid_from) <= now &&
+				new Date(coupon.valid_to) > now &&
+				coupon.times_redeemed < coupon.max_redemptions
+			) {
+				// H5 fix: enforce per-user limit (one use per customer) at checkout
+				// so the same user cannot re-apply a coupon they already redeemed.
+				const { data: already } = await admin.from('coupon_redemptions')
+					.select('id')
+					.eq('coupon_code', coupon.code)
+					.eq('user_id', user.id)
+					.maybeSingle();
+				if (already) {
+					return Response.json({ error: 'Coupon already used by this customer' }, { status: 400, headers: CORS_HEADERS })
+				}
+				discountPct = Number(coupon.percent_off);
+				appliedCoupon = coupon.code;
+			} else {
+				return Response.json({ error: 'Invalid, expired, or exhausted coupon' }, { status: 400, headers: CORS_HEADERS })
+			}
+		}
+
+		const priceUsd = Number(plan.price_usd);
+		finalUsd = Math.max(priceUsd * (1 - discountPct / 100), 0.5); // Kashier min charge guard
+
+		orderId = `nx-${user.id.slice(0, 8)}-${body.plan_id!.slice(0, 8)}-${Date.now().toString(36)}`;
+		couponCodeCol = appliedCoupon;
+		planMeta = {
+			type: 'plan',
+			plan_id: body.plan_id,
+			mode: gw.mode,
+			discount_pct: discountPct,
+			list_price_usd: priceUsd,
+			egp_rate: egpRate,
+			renew,
+			previous_expires_at: previousExpiresAt,
+		};
+	}
+
+	const finalEgp = Math.round(finalUsd * egpRate * 100) / 100; // 2 decimal places
 	const amount = finalEgp.toFixed(2);
 	let apiKey: string;
 	try {
@@ -157,11 +188,11 @@ try {
 		display: 'en',
 		failureRedirect: 'true',
 		redirectMethod: 'get',
-		merchantRedirect: `${origin}/dashboard/purchases?paid=1`,
+		merchantRedirect: `${origin}/dashboard/${kind === 'topup' ? 'wallet' : 'purchases'}?paid=1`,
 		serverWebhook: `${Deno.env.get('SUPABASE_URL')}/functions/v1/kashier-webhook`,
 		allowedMethods: (gw.allowed_methods ?? ['card']).join(','),
 		defaultMethod: gw.default_method ?? 'card',
-		metaData: encodeURIComponent(JSON.stringify({ userId: user.id, planId: body.plan_id })),
+		metaData: encodeURIComponent(JSON.stringify({ userId: user.id, type: kind, amountUsd: kind === 'topup' ? finalUsd : undefined, planId: kind === 'plan' ? body.plan_id : undefined })),
 	});
 
 	const { error: insertErr } = await admin.from('payments').insert({
@@ -171,16 +202,15 @@ try {
 		method: gw.default_method ?? 'card',
 		gateway_ref: orderId,
 		status: 'pending',
-		coupon_code: appliedCoupon,
-		meta: {
-			plan_id: body.plan_id,
-			mode: gw.mode,
-			discount_pct: discountPct,
-			list_price_usd: priceUsd,
-			egp_rate: egpRate,
-			renew,
-			previous_expires_at: previousExpiresAt,
-		},
+		coupon_code: couponCodeCol,
+		meta: kind === 'topup'
+			? {
+				type: 'topup',
+				amount_usd: finalUsd,
+				mode: gw.mode,
+				egp_rate: egpRate,
+			}
+			: planMeta,
 	});
 	if (insertErr) {
 		console.error('payment insert error:', JSON.stringify(insertErr));

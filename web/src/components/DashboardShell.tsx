@@ -20,6 +20,8 @@ import {
 	Menu,
 	X,
 	Server,
+	Gauge,
+	Activity,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ThemeToggle } from '../design-system/theme-toggle';
@@ -35,21 +37,24 @@ const userNav: NavItem[] = [
 	{ to: '/dashboard', labelKey: 'overview', Icon: LayoutDashboard },
 	{ to: '/dashboard/keys', labelKey: 'apiKeys', Icon: KeyRound },
 	{ to: '/dashboard/logs', labelKey: 'logs', Icon: ScrollText },
+	{ to: '/dashboard/usage', label: 'Usage', Icon: Activity },
+	{ to: '/dashboard/wallet', label: 'Wallet', Icon: Wallet },
 	{ to: '/dashboard/plans', labelKey: 'plans', Icon: CreditCard },
 	{ to: '/dashboard/settings', labelKey: 'settings', Icon: Settings },
 ];
 
 const adminNav: NavItem[] = [
 	{ to: '/admin', label: 'Overview', Icon: Boxes },
-	{ to: '/admin/providers', label: 'Providers', Icon: Wallet },
-	{ to: '/admin/models', label: 'Models & Categories', Icon: Building2 },
+	{ to: '/admin/providers', label: 'Providers', Icon: Server },
+	{ to: '/admin/models', label: 'Models & Pricing', Icon: Building2 },
+	{ to: '/admin/rate-limits', label: 'Rate Limits', Icon: Gauge },
 	{ to: '/admin/plans', label: 'Plans', Icon: CreditCard },
 	{ to: '/admin/users', label: 'Users', Icon: Users },
 	{ to: '/admin/payments', label: 'Payments', Icon: Wallet },
 	{ to: '/admin/coupons', label: 'Coupons', Icon: Ticket },
 	{ to: '/admin/announcements', label: 'Announcements', Icon: Megaphone },
 	{ to: '/admin/gateways', label: 'Payment Gateways', Icon: Settings },
-	{ to: '/admin/settings', label: 'Signup & Auth', Icon: ShieldCheck },
+	{ to: '/admin/settings', label: 'Auth & Settings', Icon: ShieldCheck },
 ];
 
 /**

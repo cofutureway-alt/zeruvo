@@ -1,337 +1,725 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-	Plus, Upload, Trash2, Building2, ChevronDown, ChevronRight,
-	Search, X, Check,
+	Search, Tags, Star, Percent, Gauge, Save, X, Sparkles, Pencil,
+	EyeOff, RefreshCw, Type, Image as ImageIcon, AudioLines, Video,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
+import { PageHeader, Pill, EmptyState, compactTokens } from '../../components/console-kit';
+import { VendorMark, vendorLabel } from '../../design-system/vendor-marks';
 
-interface Category {
+interface AdminModelRow {
 	id: string;
-	name: string;
-	icon_url: string | null;
-	sort_order: number;
-}
-
-interface ModelRow {
-	id: string;
+	slug: string;
 	upstream_model_id: string;
 	display_name: string;
-	category_id: string | null;
+	description: string | null;
+	context_window: number | null;
+	usage_multiplier: number | string;
 	enabled_for_users: boolean;
+	payg_enabled: boolean;
+	input_price_per_m: number | null;
+	output_price_per_m: number | null;
+	cache_read_price_per_m: number | null;
+	cache_write_price_per_m: number | null;
+	input_modalities: string[] | null;
+	output_modalities: string[] | null;
+	supports_reasoning: boolean;
+	quality_score: number | null;
+	is_featured: boolean;
+	is_custom: boolean;
+	vendor_slug: string | null;
+	tok_per_s: number | null;
+	avg_ttft_ms: number | null;
+	discount_percent: number | null;
+	is_priced: boolean;
+}
+
+interface DiscountRow {
+	id: string;
+	model_id: string;
+	applies_to: string;
+	kind: string;
+	value: number | string;
+	valid_from: string;
+	valid_to: string;
+	active: boolean;
+}
+
+interface RateLimitRow {
+	model_id: string;
+	rpm: number | null;
+	rph: number | null;
+	rpd: number | null;
+	tpm: number | null;
+}
+
+interface PlanRow {
+	id: string;
+	name: Record<string, string>;
+	active: boolean;
+}
+
+type Modal =
+	| { kind: 'pricing'; model: AdminModelRow }
+	| { kind: 'meta'; model: AdminModelRow }
+	| { kind: 'custom' };
+
+function ModalityDots({ mods }: { mods: string[] | null }) {
+	const icons = [
+		{ key: 'text', node: <Type size={11} /> },
+		{ key: 'image', node: <ImageIcon size={11} /> },
+		{ key: 'audio', node: <AudioLines size={11} /> },
+		{ key: 'video', node: <Video size={11} /> },
+	];
+	return (
+		<div className="flex items-center gap-1">
+			{icons.map(({ key, node }) => {
+				const on = (mods ?? ['text']).includes(key);
+				return (
+					<span
+						key={key}
+						title={key}
+						className={`grid size-6 place-items-center rounded-md border ${
+							on ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400' : 'border-border/50 text-muted-foreground/30'
+						}`}
+					>
+						{node}
+					</span>
+				);
+			})}
+		</div>
+	);
+}
+
+function priceCell(base: number | null, discount: number | null): { text: string; struck: boolean } {
+	if (base == null) return { text: '—', struck: false };
+	return { text: `$${base.toFixed(base < 1 ? 3 : 2)}`, struck: !!(discount && discount > 0) };
 }
 
 export default function AdminModels() {
 	const [email, setEmail] = useState('');
-	const [cats, setCats] = useState<Category[]>([]);
-	const [models, setModels] = useState<ModelRow[]>([]);
+	const [rows, setRows] = useState<AdminModelRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [name, setName] = useState('');
-	const [busy, setBusy] = useState(false);
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
-	const [assigning, setAssigning] = useState<Category | null>(null);
+	const [query, setQuery] = useState('');
+	const [vendor, setVendor] = useState('any');
+	const [status, setStatus] = useState('any');
+	const [modal, setModal] = useState<Modal | null>(null);
 
 	const load = useCallback(async () => {
 		setLoading(true);
 		const { data: { user } } = await supabase.auth.getUser();
-		setEmail(user?.email ?? '');
-		const [{ data: catRows }, { data: modelRows }] = await Promise.all([
-			supabase.from('model_categories').select('*').order('sort_order'),
-			supabase
-				.from('models')
-				.select('id,upstream_model_id,display_name,category_id,enabled_for_users')
-				.eq('enabled_for_users', true)
-				.order('upstream_model_id'),
-		]);
-		setCats(catRows ?? []);
-		setModels((modelRows ?? []) as ModelRow[]);
+		if (user) setEmail(user.email ?? '');
+		const { data } = await supabase
+			.from('models_public_view')
+			.select('*')
+			.order('display_name')
+			.limit(1000);
+		setRows((data ?? []) as unknown as AdminModelRow[]);
 		setLoading(false);
 	}, []);
 
-	useEffect(() => { void load(); }, [load]);
+	useEffect(() => {
+		void load();
+	}, [load]);
 
-	async function create() {
-		if (!name.trim()) return;
-		setBusy(true);
-		await supabase.from('model_categories').insert({ name: name.trim(), sort_order: cats.length });
-		setName('');
-		await load();
-		setBusy(false);
-	}
+	const vendors = useMemo(
+		() => [...new Set(rows.map((r) => r.vendor_slug ?? 'other'))].sort((a, b) => vendorLabel(a).localeCompare(vendorLabel(b))),
+		[rows],
+	);
 
-	async function uploadIcon(catId: string, file: File) {
-		setBusy(true);
-		const ext = file.name.split('.').pop();
-		const path = `categories/${catId}.${ext}`;
-		await supabase.storage.from('public-media').upload(path, file, { upsert: true });
-		const { data } = supabase.storage.from('public-media').getPublicUrl(path);
-		await supabase.from('model_categories').update({ icon_url: data.publicUrl }).eq('id', catId);
-		await load();
-		setBusy(false);
-	}
-
-	async function remove(id: string) {
-		await supabase.from('model_categories').delete().eq('id', id);
-		await load();
-	}
-
-	/** Detach a single model from its category. */
-	async function detachModel(modelId: string) {
-		await supabase.from('models').update({ category_id: null }).eq('id', modelId);
-		await load();
-	}
-
-	function toggleExpanded(id: string) {
-		setExpanded((s) => {
-			const next = new Set(s);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
+	const filtered = useMemo(() => {
+		const q = query.trim().toLowerCase();
+		return rows.filter((r) => {
+			if (q && !r.display_name.toLowerCase().includes(q) && !r.upstream_model_id.toLowerCase().includes(q)) return false;
+			if (vendor !== 'any' && (r.vendor_slug ?? 'other') !== vendor) return false;
+			if (status === 'priced' && !r.is_priced) return false;
+			if (status === 'unpriced' && r.is_priced) return false;
+			if (status === 'hidden' && r.enabled_for_users) return false;
+			if (status === 'custom' && !r.is_custom) return false;
+			return true;
 		});
-	}
-
-	/** models grouped by category id */
-	const byCategory = useMemo(() => {
-		const map: Record<string, ModelRow[]> = {};
-		for (const m of models) {
-			if (!m.category_id) continue;
-			(map[m.category_id] ??= []).push(m);
-		}
-		return map;
-	}, [models]);
+	}, [rows, query, vendor, status]);
 
 	return (
 		<DashboardShell variant="admin" email={email}>
 			<div className="space-y-6">
-				<header>
-					<h1 className="font-display text-xl font-semibold tracking-tight">Models & Categories</h1>
-					<p className="mt-0.5 text-sm text-[var(--nx-muted)]">
-						Create company categories, then assign models into them. Assigned categories power the
-						public catalog filters.
-					</p>
-				</header>
+				<PageHeader
+					title="Models & Pricing"
+					subtitle="Every synced model with its effective prices, discounts, throughput and live status."
+					actions={
+						<>
+							<button
+								onClick={() => setModal({ kind: 'custom' })}
+								className="flex items-center gap-2 rounded-lg border border-violet-500/50 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20"
+							>
+								<Sparkles size={15} /> Custom model
+							</button>
+							<button onClick={() => void load()} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-cyan-500/50">
+								<RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+							</button>
+						</>
+					}
+				/>
 
-				{/* create */}
-				<div className="flex flex-wrap gap-2">
-					<input
-						value={name}
-						onChange={(e) => setName(e.target.value)}
-						placeholder="New category name (e.g. Anthropic)"
-						className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500 sm:w-80"
-					/>
-					<button
-						onClick={create}
-						disabled={busy || !name.trim()}
-						className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
-					>
-						<Plus size={15} />
-						Add category
-					</button>
+				<div className="flex flex-wrap items-center gap-2">
+					<label className="relative min-w-52 flex-1">
+						<Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+						<input
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder="Search models…"
+							className="w-full rounded-lg border border-border bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
+						/>
+					</label>
+					<select value={vendor} onChange={(e) => setVendor(e.target.value)} className="h-9 rounded-lg border border-border bg-transparent px-3 text-sm outline-none focus:border-cyan-500">
+						<option value="any">All vendors</option>
+						{vendors.map((v) => <option key={v} value={v}>{vendorLabel(v)}</option>)}
+					</select>
+					<select value={status} onChange={(e) => setStatus(e.target.value)} className="h-9 rounded-lg border border-border bg-transparent px-3 text-sm outline-none focus:border-cyan-500">
+						<option value="any">All statuses</option>
+						<option value="priced">Priced</option>
+						<option value="unpriced">Unpriced</option>
+						<option value="hidden">Hidden from users</option>
+						<option value="custom">Custom models</option>
+					</select>
 				</div>
 
 				{loading ? (
-					<div className="space-y-3" aria-busy="true">
-						{Array.from({ length: 4 }).map((_, i) => <div key={i} className="nx-skeleton h-16 rounded-xl" />)}
-					</div>
+					<div className="rounded-xl border border-border px-6 py-16 text-center text-sm text-muted-foreground">Loading catalog…</div>
+				) : filtered.length === 0 ? (
+					<EmptyState icon={<Tags size={26} />} title="No models match" hint="Sync models from a provider first (Providers page), then price them here." />
 				) : (
-					<div className="space-y-3">
-						{cats.map((c) => {
-							const members = byCategory[c.id] ?? [];
-							const open = expanded.has(c.id);
-							return (
-								<section key={c.id} className="overflow-hidden rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)]">
-									{/* header row */}
-									<div className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-										<button onClick={() => toggleExpanded(c.id)} className="text-[var(--nx-muted)] hover:text-zinc-100" aria-label="Toggle">
-											{open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-										</button>
-										{c.icon_url ? (
-											<img src={c.icon_url} alt="" className="size-9 rounded-lg object-contain" />
-										) : (
-											<div className="grid size-9 place-items-center rounded-lg bg-zinc-800/60 text-[var(--nx-muted)]">
-												<Building2 size={17} />
-											</div>
-										)}
-										<div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
-											<p className="truncate font-medium">{c.name}</p>
-											<p className="text-[11px] text-[var(--nx-muted)]">{members.length} model{members.length === 1 ? '' : 's'}</p>
-										</div>
-
-										<label className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--nx-border)] px-2.5 py-1.5 text-[11px] text-cyan-400 hover:border-cyan-500/60">
-											<Upload size={11} />
-											{c.icon_url ? 'Icon' : 'Upload icon'}
-											<input type="file" accept="image/*" className="hidden"
-												onChange={(e) => e.target.files?.[0] && uploadIcon(c.id, e.target.files[0])} />
-										</label>
-										<button
-											onClick={() => setAssigning(c)}
-											className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500"
-										>
-											<Plus size={12} />
-											Add models
-										</button>
-										<button onClick={() => remove(c.id)} className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400" aria-label="Delete category">
-											<Trash2 size={14} />
-										</button>
-									</div>
-
-									{/* member list */}
-									{open && members.length > 0 && (
-										<ul className="divide-y divide-[var(--nx-border)] border-t border-[var(--nx-border)] bg-[var(--nx-bg-raised)]/40">
-											{members.map((m) => (
-												<li key={m.id} className="flex items-center gap-3 px-5 py-2 text-sm">
-													<span className="min-w-0 flex-1 truncate text-xs">{m.display_name || m.upstream_model_id}</span>
-													{m.enabled_for_users && (
-														<span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">live</span>
-													)}
-													<button
-														onClick={() => detachModel(m.id)}
-														className="rounded p-1 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400"
-														title="Remove from this category"
-													>
-														<X size={13} />
+					<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
+						<table className="w-full min-w-[1080px] text-sm">
+							<thead className="bg-zinc-900/60 font-data text-[11px] uppercase tracking-wider text-[var(--nx-muted)]">
+								<tr>
+									<th className="px-4 py-3 text-start">Model</th>
+									<th className="px-4 py-3 text-start">Vendor</th>
+									<th className="px-4 py-3 text-start">Context</th>
+									<th className="px-4 py-3 text-start">Input $/M</th>
+									<th className="px-4 py-3 text-start">Output $/M</th>
+									<th className="px-4 py-3 text-start">Modalities</th>
+									<th className="px-4 py-3 text-start">Tok/s</th>
+									<th className="px-4 py-3 text-start">Latency</th>
+									<th className="px-4 py-3 text-start">Status</th>
+									<th className="px-4 py-3" />
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-[var(--nx-border)]">
+								{filtered.map((m) => {
+									const inP = priceCell(m.input_price_per_m, m.discount_percent);
+									const outP = priceCell(m.output_price_per_m, m.discount_percent);
+									return (
+										<tr key={m.id} className="transition-colors hover:bg-cyan-500/[0.03]">
+											<td className="px-4 py-3">
+												<div className="flex items-center gap-2">
+													{m.is_featured && <Star size={12} className="shrink-0 fill-violet-400 text-violet-400" />}
+													<span className="max-w-56 truncate font-medium">{m.display_name}</span>
+												</div>
+												<p className="max-w-56 truncate font-data text-[10px] text-[var(--nx-muted)]">{m.upstream_model_id}</p>
+											</td>
+											<td className="px-4 py-3">
+												<span className="inline-flex items-center gap-1.5">
+													<VendorMark slug={m.vendor_slug} className="size-4 shrink-0" />
+													<span className="text-xs">{vendorLabel(m.vendor_slug)}</span>
+												</span>
+											</td>
+											<td className="px-4 py-3 font-data text-xs tabular-nums">{m.context_window ? compactTokens(m.context_window) : '—'}</td>
+											<td className={`px-4 py-3 font-data text-xs tabular-nums ${inP.struck ? 'line-through decoration-amber-500/80' : ''}`}>{inP.text}</td>
+											<td className={`px-4 py-3 font-data text-xs tabular-nums ${outP.struck ? 'line-through decoration-amber-500/80' : ''}`}>{outP.text}</td>
+											<td className="px-4 py-3"><ModalityDots mods={m.input_modalities} /></td>
+											<td className="px-4 py-3 font-data text-xs tabular-nums text-cyan-300/90">{m.tok_per_s ? Math.round(Number(m.tok_per_s)) : '—'}</td>
+											<td className="px-4 py-3 font-data text-xs tabular-nums">{m.avg_ttft_ms ? `${(Number(m.avg_ttft_ms) / 1000).toFixed(2)}s` : '—'}</td>
+											<td className="px-4 py-3">
+												{!m.is_priced
+													? <Pill tone="red">Unpriced</Pill>
+													: m.enabled_for_users
+														? <Pill tone="green">Available</Pill>
+														: <Pill tone="gray"><EyeOff size={11} /> Hidden</Pill>}
+												{Number(m.discount_percent ?? 0) > 0 && <Pill tone="amber" className="ms-1"><Percent size={10} />{Math.round(Number(m.discount_percent))}%</Pill>}
+												{m.is_custom && <Pill tone="violet" className="ms-1">Custom</Pill>}
+											</td>
+											<td className="px-4 py-3 text-end">
+												<div className="flex justify-end gap-1">
+													<button onClick={() => setModal({ kind: 'meta', model: m })} title="Edit metadata" className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-cyan-500/10 hover:text-cyan-300">
+														<Pencil size={14} />
 													</button>
-												</li>
-											))}
-										</ul>
-									)}
-								</section>
-							);
-						})}
-
-						{cats.length === 0 && (
-							<p className="rounded-xl border border-dashed border-[var(--nx-border)] py-14 text-center text-sm text-[var(--nx-muted)]">
-								No categories yet — create your first one above.
-							</p>
-						)}
+													<button onClick={() => setModal({ kind: 'pricing', model: m })} className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:bg-cyan-500/20">
+														Pricing
+													</button>
+												</div>
+											</td>
+										</tr>
+									);
+								})}
+							</tbody>
+						</table>
 					</div>
 				)}
-
-				<p className="text-[11px] leading-relaxed text-[var(--nx-muted)]">
-					A model belongs to at most one category. Removing a model from a category never disables it.
-				</p>
 			</div>
 
-			{assigning && (
-				<AssignModelsModal
-					category={assigning}
-					models={models}
-					onClose={() => setAssigning(null)}
-					onSaved={() => { setAssigning(null); void load(); }}
-				/>
+			{modal?.kind === 'pricing' && (
+				<PricingModal model={modal.model} onClose={() => { setModal(null); void load(); }} />
+			)}
+			{modal?.kind === 'meta' && (
+				<MetaModal model={modal.model} onClose={() => { setModal(null); void load(); }} />
+			)}
+			{modal?.kind === 'custom' && (
+				<CustomModelModal onClose={() => { setModal(null); void load(); }} />
 			)}
 		</DashboardShell>
 	);
 }
 
-/**
- * Two-pane picker: unassigned/other-category models on the left,
- * target category members on the right. Click to move either way.
- */
-function AssignModelsModal({ category, models, onClose, onSaved }: {
-	category: Category;
-	models: ModelRow[];
-	onClose: () => void;
-	onSaved: () => void;
-}) {
-	const [query, setQuery] = useState('');
-	const [pending, setPending] = useState<Record<string, boolean>>({}); // model_id -> in category?
-	const [saving, setSaving] = useState(false);
+// ---------------- pricing modal ----------------
+function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () => void }) {
+	const [mult, setMult] = useState(String(Number(model.usage_multiplier) || 1));
+	const [payg, setPayg] = useState(model.payg_enabled);
+	const [pin, setPin] = useState(model.input_price_per_m?.toString() ?? '');
+	const [pout, setPout] = useState(model.output_price_per_m?.toString() ?? '');
+	const [pcr, setPcr] = useState(model.cache_read_price_per_m?.toString() ?? '');
+	const [pcw, setPcw] = useState(model.cache_write_price_per_m?.toString() ?? '');
 
-	const currentIds = new Set(
-		models.filter((m) => m.category_id === category.id).map((m) => m.id),
-	);
+	const [plans, setPlans] = useState<PlanRow[]>([]);
+	const [planIds, setPlanIds] = useState<Set<string>>(new Set());
 
-	function isIn(m: ModelRow): boolean {
-		return pending[m.id] ?? currentIds.has(m.id);
-	}
-	function toggle(id: string) {
-		setPending((p) => ({ ...p, [id]: !isIn(models.find((x) => x.id === id)!) }));
-	}
+	const [disc, setDisc] = useState<DiscountRow | null>(null);
+	const [rl, setRl] = useState<RateLimitRow>({ model_id: model.id, rpm: null, rph: null, rpd: null, tpm: null });
+	const [visible, setVisible] = useState(model.enabled_for_users);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
-	const candidates = models.filter((m) => !isIn(m)).filter(
-		(m) => {
-			if (!query.trim()) return true;
-			const q = query.toLowerCase();
-			return m.upstream_model_id.toLowerCase().includes(q)
-				|| (m.display_name?.toLowerCase().includes(q) ?? false);
-		},
-	);
-	const chosen = models.filter((m) => isIn(m));
+	useEffect(() => {
+		void (async () => {
+			const [pl, pm, dl, rlq] = await Promise.all([
+				supabase.from('plans').select('id,name,active').order('price_usd'),
+				supabase.from('plan_models').select('plan_id').eq('model_id', model.id),
+				supabase.from('model_discounts').select('*').eq('model_id', model.id).eq('active', true).order('created_at', { ascending: false }).limit(1),
+				supabase.from('model_rate_limits').select('*').eq('model_id', model.id).maybeSingle(),
+			]);
+			setPlans((pl.data ?? []) as PlanRow[]);
+			setPlanIds(new Set((pm.data ?? []).map((r: { plan_id: string }) => r.plan_id)));
+			const d = (dl.data ?? [])[0] as DiscountRow | undefined;
+			if (d) setDisc({ ...d, valid_from: d.valid_from.slice(0, 10), valid_to: d.valid_to.slice(0, 10) });
+			if (rlq.data) setRl(rlq.data as RateLimitRow);
+		})();
+	}, [model.id]);
 
 	async function save() {
-		setSaving(true);
-		for (const m of models) {
-			const nowIn = pending[m.id];
-			const wasIn = currentIds.has(m.id);
-			if (nowIn === undefined || nowIn === wasIn) continue;
-			await supabase.from('models')
-				.update({ category_id: nowIn ? category.id : null })
-				.eq('id', m.id);
+		setBusy(true);
+		setError(null);
+		const multiplier = Number(mult) || 1;
+		if (multiplier < 1) {
+			setError('Multiplier must be ≥ 1 (leave 1 for no weighting).');
+			setBusy(false);
+			return;
 		}
-		setSaving(false);
-		onSaved();
+		const num = (s: string) => (s.trim() === '' ? null : Number(s));
+		if (payg && num(pin) == null && num(pout) == null) {
+			setError('PAYG needs at least an input or output price.');
+			setBusy(false);
+			return;
+		}
+
+		// models row: multiplier, PAYG prices, visibility
+		const { error: mErr } = await supabase.from('models').update({
+			usage_multiplier: multiplier,
+			payg_enabled: payg,
+			input_price_per_m: num(pin),
+			output_price_per_m: num(pout),
+			cache_read_price_per_m: num(pcr) ?? 0,
+			cache_write_price_per_m: num(pcw) ?? 0,
+			enabled_for_users: visible,
+		}).eq('id', model.id);
+		if (mErr) { setError(mErr.message); setBusy(false); return; }
+
+		// plan membership sync (delete-all + re-insert of the delta)
+		const { data: prevRows } = await supabase.from('plan_models').select('plan_id').eq('model_id', model.id);
+		const prev = new Set((prevRows ?? []).map((r: { plan_id: string }) => r.plan_id));
+		const toAdd = [...planIds].filter((id) => !prev.has(id));
+		const toRemove = [...prev].filter((id) => !planIds.has(id));
+		if (toAdd.length) await supabase.from('plan_models').insert(toAdd.map((plan_id) => ({ plan_id, model_id: model.id })));
+		for (const plan_id of toRemove) {
+			await supabase.from('plan_models').delete().eq('plan_id', plan_id).eq('model_id', model.id);
+		}
+
+		// discount: replace the model's active discounts with the edited one
+		await supabase.from('model_discounts').delete().eq('model_id', model.id).eq('active', true);
+		if (disc && Number(disc.value) > 0 && disc.valid_to) {
+			const { error: dErr } = await supabase.from('model_discounts').insert({
+				model_id: model.id,
+				applies_to: disc.applies_to,
+				kind: disc.kind,
+				value: Number(disc.value),
+				valid_from: disc.valid_from || new Date().toISOString().slice(0, 10),
+				valid_to: disc.valid_to,
+				active: true,
+			});
+			if (dErr) { setError(dErr.message); setBusy(false); return; }
+		}
+
+		// rate limits: upsert row, delete when fully empty
+		const hasRl = rl.rpm != null || rl.rph != null || rl.rpd != null || rl.tpm != null;
+		if (hasRl) {
+			const { error: rErr } = await supabase.from('model_rate_limits').upsert({
+				model_id: model.id,
+				rpm: rl.rpm ?? null, rph: rl.rph ?? null, rpd: rl.rpd ?? null, tpm: rl.tpm ?? null,
+			});
+			if (rErr) { setError(rErr.message); setBusy(false); return; }
+		} else {
+			await supabase.from('model_rate_limits').delete().eq('model_id', model.id);
+		}
+
+		setBusy(false);
+		onClose();
 	}
 
 	return (
+		<ModalFrame title={`Pricing — ${model.display_name}`} onClose={onClose} footer={
+			<>
+				<button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm">Cancel</button>
+				<button onClick={save} disabled={busy} className="flex items-center gap-2 rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
+					<Save size={14} /> {busy ? 'Saving…' : 'Save pricing'}
+				</button>
+			</>
+		}>
+			{error && <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-2.5 text-sm text-red-400">{error}</div>}
+
+			{/* plans */}
+			<fieldset className="rounded-xl border border-border p-4">
+				<legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pricing plans (weighted tokens)</legend>
+				<label className="mt-2 flex items-center gap-2 text-sm">
+					<input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} className="accent-cyan-500" />
+					Visible to users <span className="text-xs text-muted-foreground">(required for plan billing)</span>
+				</label>
+				<label className="mt-3 flex items-center gap-2 text-sm">
+					Usage multiplier
+					<input
+						type="number" min={1} step="any" value={mult}
+						onChange={(e) => setMult(e.target.value)}
+						dir="ltr"
+						className="w-20 rounded-md border border-border bg-transparent px-2 py-1 font-data text-xs tabular-nums outline-none focus:border-cyan-500"
+					/>
+					<span className="text-xs text-muted-foreground">×1 = no weighting</span>
+				</label>
+				<div className="mt-3 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+					{plans.map((p) => (
+						<label key={p.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-cyan-500/5">
+							<input
+								type="checkbox"
+								checked={planIds.has(p.id)}
+								onChange={(e) => {
+									const next = new Set(planIds);
+									if (e.target.checked) next.add(p.id); else next.delete(p.id);
+									setPlanIds(next);
+								}}
+								className="accent-cyan-500"
+							/>
+							<span className="truncate">{p.name?.en ?? p.name?.ar ?? p.id}</span>
+							{!p.active && <Pill tone="gray">hidden</Pill>}
+						</label>
+					))}
+				</div>
+				<p className="mt-2 text-xs text-muted-foreground">No selection = every plan can use this model.</p>
+			</fieldset>
+
+			{/* PAYG */}
+			<fieldset className="mt-4 rounded-xl border border-border p-4">
+				<legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pay-As-You-Go</legend>
+				<label className="mt-2 flex items-center gap-2 text-sm">
+					<input type="checkbox" checked={payg} onChange={(e) => setPayg(e.target.checked)} className="accent-cyan-500" />
+					Charge wallet per token (USD per 1M tokens)
+				</label>
+				{payg && (
+					<div className="mt-3 grid grid-cols-2 gap-3">
+						<PriceInput label="Input / 1M" value={pin} onChange={setPin} />
+						<PriceInput label="Output / 1M" value={pout} onChange={setPout} />
+						<PriceInput label="Cache read / 1M" value={pcr} onChange={setPcr} />
+						<PriceInput label="Cache write / 1M" value={pcw} onChange={setPcw} />
+					</div>
+				)}
+				<p className="mt-2 text-xs text-muted-foreground">A model can be in plans AND support PAYG — users choose their billing mode.</p>
+			</fieldset>
+
+			{/* discount */}
+			<fieldset className="mt-4 rounded-xl border border-border p-4">
+				<legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Discount (time-limited)</legend>
+				<div className="mt-2 grid grid-cols-2 gap-3">
+					<label className="text-xs">
+						<span className="text-muted-foreground">Applies to</span>
+						<select
+							value={disc?.applies_to ?? 'all'}
+							onChange={(e) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), applies_to: e.target.value }))}
+							className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-sm outline-none focus:border-cyan-500"
+						>
+							<option value="all">All prices</option>
+							<option value="input">Input</option>
+							<option value="output">Output</option>
+							<option value="cache_read">Cache read</option>
+							<option value="cache_write">Cache write</option>
+						</select>
+					</label>
+					<label className="text-xs">
+						<span className="text-muted-foreground">Kind</span>
+						<select
+							value={disc?.kind ?? 'percent'}
+							onChange={(e) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), kind: e.target.value }))}
+							className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-sm outline-none focus:border-cyan-500"
+						>
+							<option value="percent">Percent %</option>
+							<option value="fixed">Fixed $ off / 1M</option>
+						</select>
+					</label>
+					<PriceInput
+						label={disc?.kind === 'fixed' ? 'Value ($/1M off)' : 'Value (% off)'}
+						value={disc?.value != null ? String(disc.value) : ''}
+						onChange={(v) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), value: v === '' ? 0 : Number(v) }))}
+					/>
+					<label className="text-xs">
+						<span className="text-muted-foreground">Valid from</span>
+						<input type="date" value={disc?.valid_from ?? ''} onChange={(e) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), valid_from: e.target.value }))} className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 font-data text-xs outline-none focus:border-cyan-500" />
+					</label>
+					<label className="text-xs">
+						<span className="text-muted-foreground">Expires (valid until)</span>
+						<input type="date" value={disc?.valid_to ?? ''} onChange={(e) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), valid_to: e.target.value }))} className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 font-data text-xs outline-none focus:border-cyan-500" />
+					</label>
+					<button onClick={() => setDisc(null)} className="mt-5 justify-self-start rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10">
+						Remove discount
+					</button>
+				</div>
+			</fieldset>
+
+			{/* rate limits */}
+			<fieldset className="mt-4 rounded-xl border border-border p-4">
+				<legend className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					<Gauge size={12} /> Rate limits (empty = global defaults)
+				</legend>
+				<div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+					<NumInput label="Req / min" value={rl.rpm} onChange={(v) => setRl({ ...rl, rpm: v })} />
+					<NumInput label="Req / hour" value={rl.rph} onChange={(v) => setRl({ ...rl, rph: v })} />
+					<NumInput label="Req / day" value={rl.rpd} onChange={(v) => setRl({ ...rl, rpd: v })} />
+					<NumInput label="Tokens / min" value={rl.tpm} onChange={(v) => setRl({ ...rl, tpm: v })} />
+				</div>
+			</fieldset>
+		</ModalFrame>
+	);
+}
+
+function blankDisc(modelId: string): DiscountRow {
+	return { id: '', model_id: modelId, applies_to: 'all', kind: 'percent', value: 10, valid_from: new Date().toISOString().slice(0, 10), valid_to: '', active: true };
+}
+
+function PriceInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+	return (
+		<label className="block text-xs">
+			<span className="text-muted-foreground">{label}</span>
+			<input
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				placeholder="—"
+				inputMode="decimal"
+				dir="ltr"
+				className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 font-data text-sm tabular-nums outline-none focus:border-cyan-500"
+			/>
+		</label>
+	);
+}
+
+function NumInput({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
+	return (
+		<label className="block text-xs">
+			<span className="text-muted-foreground">{label}</span>
+			<input
+				value={value ?? ''}
+				onChange={(e) => onChange(e.target.value.trim() === '' ? null : Number(e.target.value))}
+				placeholder="∞"
+				inputMode="numeric"
+				dir="ltr"
+				className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 font-data text-sm tabular-nums outline-none focus:border-cyan-500"
+			/>
+		</label>
+	);
+}
+
+// ---------------- metadata modal ----------------
+function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => void }) {
+	const [name, setName] = useState(model.display_name);
+	const [description, setDescription] = useState(model.description ?? '');
+	const [quality, setQuality] = useState(model.quality_score?.toString() ?? '');
+	const [featured, setFeatured] = useState(model.is_featured);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	async function save() {
+		setBusy(true);
+		setError(null);
+		const q = quality.trim() === '' ? null : Number(quality);
+		if (q != null && (q < 0 || q > 5)) {
+			setError('Quality score must be 0–5.');
+			setBusy(false);
+			return;
+		}
+		const { error } = await supabase.from('models').update({
+			display_name: name.trim() || model.upstream_model_id,
+			description: description.trim() || null,
+			quality_score: q,
+			is_featured: featured,
+		}).eq('id', model.id);
+		if (error) setError(error.message);
+		else onClose();
+		setBusy(false);
+	}
+
+	return (
+		<ModalFrame title={`Edit — ${model.upstream_model_id}`} onClose={onClose} footer={
+			<>
+				<button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm">Cancel</button>
+				<button onClick={save} disabled={busy} className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
+					{busy ? 'Saving…' : 'Save'}
+				</button>
+			</>
+		}>
+			{error && <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-2.5 text-sm text-red-400">{error}</div>}
+			<label className="block text-xs">
+				<span className="text-muted-foreground">Display name</span>
+				<input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+			</label>
+			<label className="mt-3 block text-xs">
+				<span className="text-muted-foreground">Description</span>
+				<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+			</label>
+			<div className="mt-3 grid grid-cols-2 gap-3">
+				<PriceInput label="Quality score (0–5, stars)" value={quality} onChange={setQuality} />
+				<label className="mt-5 flex items-center gap-2 text-sm">
+					<input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="accent-violet-500" />
+					<Star size={13} className="fill-violet-400 text-violet-400" /> Recommended card
+				</label>
+			</div>
+		</ModalFrame>
+	);
+}
+
+// ---------------- custom model modal ----------------
+function CustomModelModal({ onClose }: { onClose: () => void }) {
+	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null }>>([]);
+	const [parentId, setParentId] = useState('');
+	const [name, setName] = useState('');
+	const [newId, setNewId] = useState('');
+	const [prompt, setPrompt] = useState('');
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		void supabase
+			.from('models')
+			.select('id,display_name,upstream_model_id,provider_id,vendor_slug,category_id')
+			.eq('enabled_for_users', true)
+			.order('display_name')
+			.limit(500)
+			.then(({ data }) => {
+				setModels((data ?? []) as typeof models);
+				if (data && data.length) setParentId(data[0]!.id);
+			});
+	}, []);
+
+	async function create() {
+		setBusy(true);
+		setError(null);
+		const id = newId.trim();
+		if (!parentId || !name.trim() || !id) {
+			setError('Pick a base model, then give the copy a new name and a new model id.');
+			setBusy(false);
+			return;
+		}
+		if (/\s/.test(id)) {
+			setError('Model id cannot contain spaces (e.g. my-gpt-for-support).');
+			setBusy(false);
+			return;
+		}
+		const base = models.find((m) => m.id === parentId)!;
+
+		// the new id must be globally unique — a clash would shadow the base model
+		const { data: clash } = await supabase.from('models').select('id').eq('upstream_model_id', id).maybeSingle();
+		if (clash) {
+			setError(`Model id "${id}" already exists — pick another.`);
+			setBusy(false);
+			return;
+		}
+
+		let slug = id.replace(/[^a-zA-Z0-9._:-]/g, '-').replace(/^-+/, '');
+		const { data: slugClash } = await supabase.from('models').select('id').eq('slug', slug).maybeSingle();
+		if (slugClash) slug = `${slug}-custom`;
+
+		const { error: insErr } = await supabase.from('models').insert({
+			provider_id: base.provider_id,
+			upstream_model_id: id,
+			display_name: name.trim(),
+			slug,
+			is_custom: true,
+			parent_model_id: base.id,
+			system_prompt: prompt.trim() || null,
+			vendor_slug: base.vendor_slug,
+			category_id: base.category_id,
+			enabled_for_users: false,
+			usage_multiplier: 1,
+		});
+		if (insErr) {
+			setError(insErr.message);
+			setBusy(false);
+			return;
+		}
+		setBusy(false);
+		onClose();
+	}
+
+	return (
+		<ModalFrame title="Custom model" onClose={onClose} footer={
+			<>
+				<button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm">Cancel</button>
+				<button onClick={create} disabled={busy} className="flex items-center gap-2 rounded-lg bg-violet-600 px-5 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-40">
+					<Sparkles size={14} /> {busy ? 'Creating…' : 'Create custom model'}
+				</button>
+			</>
+		}>
+			{error && <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-2.5 text-sm text-red-400">{error}</div>}
+			<p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+				A copy of an existing model with its own id, name and system prompt. It appears in the API and dashboards under
+				the new name; the original stays untouched. Price it from the table after creating.
+			</p>
+			<label className="block text-xs">
+				<span className="text-muted-foreground">Base model</span>
+				<select value={parentId} onChange={(e) => setParentId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+					{models.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+				</select>
+			</label>
+			<label className="mt-3 block text-xs">
+				<span className="text-muted-foreground">New display name</span>
+				<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Support Agent GPT" className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+			</label>
+			<label className="mt-3 block text-xs">
+				<span className="text-muted-foreground">New model id (what clients send)</span>
+				<input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="e.g. support-agent-gpt" dir="ltr" className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500" />
+			</label>
+			<label className="mt-3 block text-xs">
+				<span className="text-muted-foreground">System prompt (prepended to every request)</span>
+				<textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={6} placeholder="You are a support agent for…" className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500" />
+			</label>
+		</ModalFrame>
+	);
+}
+
+// ---------------- shared modal frame ----------------
+function ModalFrame({ title, onClose, footer, children }: { title: string; onClose: () => void; footer: React.ReactNode; children: React.ReactNode }) {
+	return (
 		<div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
-			<div className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
+			<div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--nx-border)] bg-[var(--nx-surface)] shadow-2xl">
 				<header className="flex items-center justify-between border-b border-[var(--nx-border)] px-6 py-4">
-					<h2 className="font-display font-semibold">Assign to {category.name}</h2>
+					<h2 className="font-semibold">{title}</h2>
 					<button onClick={onClose} className="rounded-lg p-1.5 text-[var(--nx-muted)] hover:bg-zinc-800/60"><X size={18} /></button>
 				</header>
-
-				<div className="border-b border-[var(--nx-border)] px-6 py-3">
-					<label className="relative block max-w-sm">
-						<Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--nx-muted)]" />
-						<input
-							value={query}
-							onChange={(e) => setQuery(e.target.value)}
-							placeholder="Filter catalog…"
-							className="w-full rounded-lg border border-[var(--nx-border)] bg-transparent py-2 pe-3 ps-9 text-sm outline-none focus:border-cyan-500"
-						/>
-					</label>
-				</div>
-
-				<div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 pt-4 lg:grid-cols-2 lg:overflow-y-hidden">
-					{/* available */}
-					<section className="flex min-h-0 flex-col rounded-xl border border-[var(--nx-border)]">
-						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">Catalog <span className="text-[var(--nx-muted)]">({candidates.length})</span></h3>
-						<ul className="min-h-0 flex-1 divide-y divide-[var(--nx-border)] overflow-y-auto">
-							{candidates.map((m) => (
-								<li key={m.id}>
-									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-cyan-500/5">
-										<span className="truncate text-xs">{m.display_name || m.upstream_model_id}</span>
-										<Plus size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-cyan-400" />
-									</button>
-								</li>
-							))}
-						</ul>
-					</section>
-
-					{/* chosen */}
-					<section className="flex min-h-0 flex-col rounded-xl border border-cyan-500/30">
-						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">In {category.name} <span className="text-[var(--nx-muted)]">({chosen.length})</span></h3>
-						<ul className="min-h-0 flex-1 divide-y divide-[var(--nx-border)] overflow-y-auto">
-							{chosen.map((m) => (
-								<li key={m.id}>
-									<button onClick={() => toggle(m.id)} className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-start text-sm hover:bg-red-500/5">
-										<span className="truncate text-xs">{m.display_name || m.upstream_model_id}</span>
-										<X size={13} className="shrink-0 text-[var(--nx-muted)] group-hover:text-red-400" />
-									</button>
-								</li>
-							))}
-						</ul>
-					</section>
-				</div>
-
-				<footer className="flex justify-end gap-2 border-t border-[var(--nx-border)] px-6 py-4">
-					<button onClick={onClose} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
-					<button onClick={save} disabled={saving} className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
-						<Check size={14} />
-						{saving ? 'Saving…' : 'Save assignment'}
-					</button>
-				</footer>
+				<div className="overflow-y-auto px-6 py-4">{children}</div>
+				<footer className="flex items-center justify-end gap-2 border-t border-[var(--nx-border)] px-6 py-4">{footer}</footer>
 			</div>
 		</div>
 	);

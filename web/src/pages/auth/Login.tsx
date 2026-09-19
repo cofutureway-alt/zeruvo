@@ -2,9 +2,13 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { GithubIcon } from '../../components/GithubIcon';
+import { GoogleIcon } from '../../components/GoogleIcon';
+import { Turnstile } from '../../components/Turnstile';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { signInWithGoogle } from '../../lib/google-auth';
 import { useAuth } from '../../auth-context';
 import AuthLayout from './AuthLayout';
 
@@ -28,14 +32,25 @@ export default function Login() {
 	const [showPw, setShowPw] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [captchaToken, setCaptchaToken] = useState('');
+	const settings = useAppSettings();
+	const needCaptcha = !!settings?.turnstile_enabled && !!settings.turnstile_on_login;
 
 	const anim = !reduced;
 
 	async function onSubmit(e: React.FormEvent) {
 		e.preventDefault();
+		if (needCaptcha && !captchaToken) {
+			setError(t('auth.captchaRequired') ?? 'Please complete the human-verification check.');
+			return;
+		}
 		setBusy(true);
 		setError(null);
-		const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+		const { error: err } = await supabase.auth.signInWithPassword({
+			email,
+			password,
+			...(needCaptcha ? { options: { captchaToken } } : {}),
+		});
 		if (err) {
 			setError(err.message.includes('Invalid login') ? t('auth.invalidCredentials') : err.message);
 			setBusy(false);
@@ -58,6 +73,19 @@ export default function Login() {
 		// on success the browser redirects to GitHub — no navigate needed
 	}
 
+	async function continueWithGoogle() {
+		if (!settings?.google_auth_enabled) return;
+		setBusy(true);
+		setError(null);
+		const res = await signInWithGoogle(settings.firebase_config);
+		if (res.error) {
+			setError(res.error);
+			setBusy(false);
+			return;
+		}
+		navigate(next, { replace: true });
+	}
+
 	return (
 		<AuthLayout>
 			<div className="space-y-6">
@@ -67,30 +95,43 @@ export default function Login() {
 					<p className="mt-1 text-sm text-[var(--nx-muted)]">{t('auth.loginSubtitle')}</p>
 				</motion.div>
 
-				{/* GitHub OAuth — available in every signup mode (existing email users unaffected) */}
-				<motion.div {...field(reduced, 4)}>
-					{signupMode === 'github_only' && (
-						<p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-							{t('auth.githubOnlyNotice')}
-						</p>
-					)}
-					<motion.button
-						type="button"
-						onClick={continueWithGithub}
-						disabled={busy}
-						whileHover={anim ? { scale: 1.01 } : undefined}
-						whileTap={anim ? { scale: 0.98 } : undefined}
-						className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
-					>
-						<GithubIcon size={16} />
-						{t('auth.continueWithGithub')}
-					</motion.button>
-					<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
-						<span className="h-px flex-1 bg-[var(--nx-border)]" />
-						or
-						<span className="h-px flex-1 bg-[var(--nx-border)]" />
-					</div>
-				</motion.div>
+					{/* social sign-in — GitHub + (admin-configured) Google via Firebase */}
+					<motion.div {...field(reduced, 4)}>
+						{signupMode === 'github_only' && (
+							<p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+								{t('auth.githubOnlyNotice')}
+							</p>
+						)}
+						<motion.button
+							type="button"
+							onClick={continueWithGithub}
+							disabled={busy}
+							whileHover={anim ? { scale: 1.01 } : undefined}
+							whileTap={anim ? { scale: 0.98 } : undefined}
+							className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
+						>
+							<GithubIcon size={16} />
+							{t('auth.continueWithGithub')}
+						</motion.button>
+						{settings?.google_auth_enabled && (
+							<motion.button
+								type="button"
+								onClick={continueWithGoogle}
+								disabled={busy}
+								whileHover={anim ? { scale: 1.01 } : undefined}
+								whileTap={anim ? { scale: 0.98 } : undefined}
+								className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--nx-border)] py-3 text-sm font-medium transition-colors hover:border-zinc-500 hover:bg-white/[0.03] disabled:opacity-50"
+							>
+								<GoogleIcon size={16} />
+								{t('auth.continueWithGoogle')}
+							</motion.button>
+						)}
+						<div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-[var(--nx-muted)]">
+							<span className="h-px flex-1 bg-[var(--nx-border)]" />
+							or
+							<span className="h-px flex-1 bg-[var(--nx-border)]" />
+						</div>
+					</motion.div>
 
 				<form onSubmit={onSubmit} className="space-y-4">
 					{/* email */}
@@ -152,6 +193,17 @@ export default function Login() {
 							</motion.p>
 						)}
 					</AnimatePresence>
+
+					{/* Turnstile human verification (admin-configured) */}
+					{needCaptcha && (
+						<motion.div {...field(reduced, 3)} className="rounded-xl border border-[var(--nx-border)] p-3">
+							<p className="mb-2 flex items-center gap-1.5 text-xs text-[var(--nx-muted)]">
+								<ShieldCheck size={13} className="text-cyan-400" />
+								{t('auth.captchaTitle') ?? 'Human verification'}
+							</p>
+							<Turnstile siteKey={settings!.turnstile_site_key} onToken={setCaptchaToken} />
+						</motion.div>
+					)}
 
 					{/* submit */}
 					<motion.div {...field(reduced, 3)}>

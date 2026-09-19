@@ -127,6 +127,29 @@ if (req.method === 'OPTIONS') {
 		return Response.json({ error: 'amount mismatch' }, { status: 400, headers: CORS_HEADERS })
 	}
 
+	// wallet top-ups credit the wallet and stop here — no subscription logic
+	if (paidMeta?.type === 'topup') {
+		const topupUsd = Number(paidMeta.amount_usd ?? payment.amount_usd_display);
+		const { error: creditErr } = await admin.rpc('wallet_credit', {
+			p_user_id: payment.user_id,
+			p_amount_usd: topupUsd,
+			p_kind: 'topup',
+			p_payment_id: payment.id,
+			p_note: `Kashier order ${orderId}`,
+		});
+		if (creditErr) {
+			console.error('wallet_credit failed:', JSON.stringify(creditErr));
+			// payment stays pending → a replayed webhook can still credit the wallet
+			return Response.json({ error: 'wallet credit failed' }, { status: 500, headers: CORS_HEADERS })
+		}
+		await admin.from('payments').update({
+			status: 'paid',
+			method: body.data.method ?? 'card',
+			meta: { ...(payment.meta as object), transaction_id: body.data.transactionId },
+		}).eq('id', payment.id);
+		return Response.json({ ok: true, handled: 'wallet_topup' }, { headers: CORS_HEADERS })
+	}
+
 	const planId = (payment.meta as any)?.plan_id;
 	if (!planId) return Response.json({ error: 'payment missing plan meta' }, { status: 500, headers: CORS_HEADERS })
 	const { data: plan } = await admin.from('plans')

@@ -16,6 +16,8 @@ export interface Usage {
 	input: number;
 	output: number;
 	cacheRead?: number;
+	/** Anthropic cache_creation_input_tokens — billed at the cache-write rate */
+	cacheWrite?: number;
 }
 
 export const HEARTBEAT_MS = 15_000;
@@ -29,6 +31,8 @@ export interface StreamOutcome {
 	aborted?: boolean;
 	/** bytes actually streamed to the client — provable output volume */
 	streamedBytes: number;
+	/** ms from attempt start to the first content byte served (set by failover) */
+	ttftMs?: number;
 }
 
 export interface PumpResult extends StreamOutcome {
@@ -257,6 +261,7 @@ function extractUsage(payload: string, wire: Wire, outcome: StreamOutcome): void
 					input: j.message.usage.input_tokens ?? 0,
 					output: 0,
 					cacheRead: j.message.usage.cache_read_input_tokens ?? 0,
+					cacheWrite: j.message.usage.cache_creation_input_tokens ?? 0,
 				};
 			}
 			if (j.type === 'message_delta' && j.usage?.output_tokens != null && outcome.usage) {
@@ -286,7 +291,12 @@ export function extractNonStreamUsage(bodyText: string, wire: Wire): Usage {
 	try {
 		const j = JSON.parse(bodyText);
 		if (wire === 'anthropic' && j.usage) {
-			return { input: j.usage.input_tokens ?? 0, output: j.usage.output_tokens ?? 0 };
+			return {
+				input: j.usage.input_tokens ?? 0,
+				output: j.usage.output_tokens ?? 0,
+				cacheRead: j.usage.cache_read_input_tokens ?? 0,
+				cacheWrite: j.usage.cache_creation_input_tokens ?? 0,
+			};
 		}
 		if (wire === 'gemini' && j.usageMetadata) {
 			return { input: j.usageMetadata.promptTokenCount ?? 0, output: j.usageMetadata.candidatesTokenCount ?? 0 };

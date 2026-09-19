@@ -28,7 +28,10 @@
 		"pendingTitle": "账号待审核",
 		"pendingBody": "您的 GitHub 账号年龄低于本站要求的最低年龄（{{days}} 天）。您的 GitHub 账号达到要求后，访问权限将自动解锁。",
 		"pendingUntil": "访问将于 {{date}} 解锁",
-		"pendingRecheck": "重新检查"
+		"pendingRecheck": "重新检查",
+		"continueWithGoogle": "使用 Google 继续",
+		"captchaTitle": "人机验证",
+		"captchaRequired": "请完成人机验证。"
 	},
 	"dashboard": {
 		"title": "控制面板",

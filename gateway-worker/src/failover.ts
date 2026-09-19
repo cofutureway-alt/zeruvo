@@ -268,6 +268,11 @@ export function startFailoverStream(opts: FailoverOptions): {
 		forceStream: boolean,
 		isFirst: boolean,
 	): Promise<AttemptResult> {
+		const attemptStart = Date.now();
+		/** first content byte served → time-to-first-token for the usage log */
+		const markTtft = () => {
+			if (outcome.ttftMs === undefined) outcome.ttftMs = Date.now() - attemptStart;
+		};
 		const headerWaitMs = isFirst
 			? opts.headerWaitFirstMs ?? DEFAULT_HEADER_WAIT_FIRST_MS
 			: opts.headerWaitLaterMs ?? DEFAULT_HEADER_WAIT_LATER_MS;
@@ -348,6 +353,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 			if (opts.mode === 'sse') {
 				const wrappedPush = (s: string): boolean => {
 					upstreamIdle.reset();
+					markTtft();
 					return pushContent(s);
 				};
 				const pump = await pumpProviderStream(res, opts.clientWire, wrappedPush);
@@ -394,6 +400,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 				}
 				mergePump(pump);
 				if (!pushContent(pump.bodyText)) return { done: true, failure: null };
+				markTtft();
 				outcome.servedRoute = route;
 				return { done: true, failure: null };
 			}
@@ -418,6 +425,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 			outcome.usage = usage;
 			outcome.streamedBytes += bodyText.length;
 			if (!pushContent(bodyText)) return { done: true, failure: null };
+			markTtft();
 			outcome.servedRoute = route;
 			return { done: true, failure: null };
 		} finally {

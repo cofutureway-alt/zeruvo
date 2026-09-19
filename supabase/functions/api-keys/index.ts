@@ -36,6 +36,47 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function decrypt(stored: string, dekB64: string): Promise<string> {
+  const bytes = b64ToBytes(stored);
+  const nonce = bytes.slice(0, 12), ct = bytes.slice(12);
+  const raw = b64ToBytes(dekB64);
+  const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ct));
+}
+
+/** Cloudflare Turnstile server-side verification (when the admin enabled it). */
+async function verifyTurnstile(token: unknown): Promise<string | null> {
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const { data: settings } = await admin.from('app_settings')
+    .select('turnstile_enabled,turnstile_on_api_key').eq('id', 1).maybeSingle();
+  if (!settings?.turnstile_enabled || !settings.turnstile_on_api_key) return null; // not required
+  if (!token || typeof token !== 'string') return 'captcha required';
+  const { data: secretRow } = await admin.from('private_settings')
+    .select('value_encrypted').eq('key', 'turnstile_secret').maybeSingle();
+  if (!secretRow) return 'captcha not configured';
+  let secret: string;
+  try {
+    secret = await decrypt(secretRow.value_encrypted, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
+  } catch {
+    return 'captcha not configured';
+  }
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret, response: token }),
+  });
+  const verdict = await res.json().catch(() => null);
+  if (!verdict?.success) return 'captcha verification failed';
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
   if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
@@ -59,7 +100,7 @@ Deno.serve(async (req) => {
   if (req.method === 'GET') {
     // List user's active keys (revoked keys are hidden; permanent delete removes them entirely)
     const { data, error } = await admin.from('user_api_keys')
-      .select('id, user_id, name, prefix, last4, allowed_models, rate_limit_per_min, status, last_used_at, created_at')
+      .select('id, user_id, name, prefix, last4, allowed_models, rate_limit_per_min, spend_limit_usd, total_spent_usd, status, last_used_at, created_at')
       .eq('user_id', user.id)
       .eq('status', 'active')
       .order('created_at', { ascending: false });
@@ -77,6 +118,10 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'create') {
+      // Human-verification gate on key creation (when enabled by the admin)
+      const captchaError = await verifyTurnstile(body.turnstile_token).catch(() => 'captcha check failed');
+      if (captchaError) return json({ error: captchaError }, 403);
+
       // Check active key count — count may be null on error, treat as 0 then re-verify via trigger
       const { count, error: countErr } = await admin.from('user_api_keys')
         .select('id', { count: 'exact', head: true })
@@ -91,6 +136,14 @@ Deno.serve(async (req) => {
       const newKey = genKey();
       const hash = await sha256Hex(newKey);
 
+      // spend limit: empty/absent = unlimited (NULL)
+      const spendLimit = body.spend_limit_usd == null || body.spend_limit_usd === ''
+        ? null
+        : Number(body.spend_limit_usd);
+      if (spendLimit != null && (!Number.isFinite(spendLimit) || spendLimit < 0)) {
+        return json({ error: 'spend_limit_usd must be a positive number or empty' }, 400);
+      }
+
       // DB trigger re-validates the limit — race-safe even if two creates race here
       const { data, error } = await admin.from('user_api_keys')
         .insert({
@@ -103,6 +156,7 @@ Deno.serve(async (req) => {
           rate_limit_per_min: Number.isInteger(body.rate_limit_per_min) && body.rate_limit_per_min > 0
             ? Math.min(body.rate_limit_per_min, 600)
             : 60,
+          spend_limit_usd: spendLimit,
           status: 'active',
         })
         .select('id, name, prefix, last4, created_at')

@@ -24,9 +24,12 @@ import Logs from './pages/user/Logs';
 import Plans from './pages/user/Plans';
 import Purchases from './pages/user/Purchases';
 import Settings from './pages/user/Settings';
+import Wallet from './pages/user/Wallet';
+import Usage from './pages/user/Usage';
 import Admin from './pages/admin/Admin';
 import Providers from './pages/admin/Providers';
 import AdminModels from './pages/admin/AdminModels';
+import RateLimits from './pages/admin/RateLimits';
 import AdminPlans from './pages/admin/AdminPlans';
 import Users from './pages/admin/Users';
 import Payments from './pages/admin/Payments';
@@ -153,6 +156,26 @@ function App() {
 							</ProtectedRoute>
 						}
 					/>
+					<Route
+						path="/dashboard/wallet"
+						element={
+							<ProtectedRoute>
+								<PendingRoute>
+									<Wallet />
+								</PendingRoute>
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/dashboard/usage"
+						element={
+							<ProtectedRoute>
+								<PendingRoute>
+									<Usage />
+								</PendingRoute>
+							</ProtectedRoute>
+						}
+					/>
 					{/* admin console */}
 					<Route
 						path="/admin"
@@ -175,6 +198,14 @@ function App() {
 						element={
 							<AdminRoute>
 								<AdminModels />
+							</AdminRoute>
+						}
+					/>
+					<Route
+						path="/admin/rate-limits"
+						element={
+							<AdminRoute>
+								<RateLimits />
 							</AdminRoute>
 						}
 					/>

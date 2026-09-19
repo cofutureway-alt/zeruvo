@@ -76,18 +76,9 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 	}
 
 	async function save() {
-		const selected = models
-			.filter((m) => m.enabled_for_users)
-			.map((m) => ({
-				upstream_model_id: m.upstream_model_id,
-				usage_multiplier: Number(multipliers[m.upstream_model_id] ?? 1),
-			}));
-		for (const s of selected) {
-			if (!(s.usage_multiplier >= 1)) {
-				setError(`Set a usage multiplier ≥ 1 for ${s.upstream_model_id}`);
-				return;
-			}
-		}
+		// Pricing no longer lives here: enabling a model defaults to ×1 with no
+		// forced multiplier — plan multiplier + PAYG prices are set from the
+		// Models & Pricing page. Only enablement and display name are saved.
 		setSaving(true);
 		setError(null);
 		for (const m of models) {
@@ -242,7 +233,6 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 					<section className="flex min-h-0 flex-col rounded-xl border border-cyan-500/30">
 						<h3 className="border-b border-[var(--nx-border)] px-4 py-2.5 text-sm font-medium">
 							Live to users <span className="text-[var(--nx-muted)]">({live.length})</span>
-							<span className="ms-1 text-[11px] text-red-400">multiplier required</span>
 						</h3>
 						<ul className="min-h-0 flex-1 divide-y divide-[var(--nx-border)] overflow-y-auto">
 							{live.length === 0 ? (
@@ -290,7 +280,7 @@ export function ModelSelector(props: { provider: ProviderRow; onClose: () => voi
 				</div>
 
 				<footer className="flex items-center justify-between border-t border-[var(--nx-border)] px-6 py-4">
-					<p className="text-xs text-[var(--nx-muted)]">Weighted billing: a ×50 model consumes 50 quota units per token.</p>
+					<p className="text-xs text-[var(--nx-muted)]">Multiplier is optional (×1 default) — set plan/PAYG pricing from Models &amp; Pricing.</p>
 					<div className="flex gap-2">
 						<button onClick={props.onClose} className="rounded-lg border border-[var(--nx-border)] px-4 py-2 text-sm">Cancel</button>
 						<button onClick={save} disabled={saving} className="rounded-lg bg-cyan-600 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
