@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
 import { locales, setLocale, type Locale } from '../../i18n-config';
+import { Trash2 } from 'lucide-react';
 
 const labels: Record<Locale, string> = { en: 'English', ar: 'العربية', fr: 'Français', zh: '中文' };
 
@@ -13,10 +14,35 @@ export default function Settings() {
 	const [confirm, setConfirm] = useState('');
 	const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [deleting, setDeleting] = useState(false);
 
 	useEffect(() => {
 		void supabase.auth.getUser().then(({ data: { user } }) => setEmail(user?.email ?? ''));
 	}, []);
+
+	async function deleteAccount() {
+		const confirmed = window.confirm(
+			'Delete your account permanently? All data — profile, API keys, usage logs, subscriptions, and billing records — will be removed. This cannot be undone.',
+		);
+		if (!confirmed) return;
+
+		setDeleting(true);
+		setMessage(null);
+		const { data: { session } } = await supabase.auth.getSession();
+		const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-account`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+		});
+		const json = await res.json().catch(() => ({}));
+		if (!res.ok) {
+			setMessage({ ok: false, text: json.error ?? 'Failed to delete account' });
+		} else {
+			setMessage({ ok: true, text: 'Account deleted. You will be signed out.' });
+			await supabase.auth.signOut();
+			window.location.href = '/login';
+		}
+		setDeleting(false);
+	}
 
 	async function changePassword() {
 		if (password.length < 8) {
@@ -90,6 +116,21 @@ export default function Settings() {
 						</button>
 					</div>
 				</section>
+
+					<section className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+						<h2 className="text-sm font-medium text-red-400">Danger Zone</h2>
+						<p className="mt-1 text-xs text-[var(--nx-muted)]">
+							Permanently delete your account and all associated data. This action cannot be undone.
+						</p>
+						<button
+							onClick={deleteAccount}
+							disabled={deleting || busy}
+							className="mt-3 flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+						>
+							<Trash2 size={15} />
+							{deleting ? 'Deleting…' : 'Delete Account Permanently'}
+						</button>
+					</section>
 			</div>
 		</DashboardShell>
 	);

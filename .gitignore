@@ -48,3 +48,6 @@ gateway-worker/dist/
 .dev.vars
 .dev.vars.*
 .wrangler/
+
+# zcode workspace metadata
+.zcode/
