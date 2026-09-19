@@ -8,7 +8,7 @@ import { Reveal } from '../../design-system/reveal';
 import { useAuth } from '../../auth-context';
 import { VendorMark, vendorLabel } from '../../design-system/vendor-marks';
 import { Toggle, compactTokens } from '../../components/console-kit';
-import { blendedPrice, type ModelCardData } from '../../components/ModelCard';
+import type { ModelCardData } from '../../components/ModelCard';
 
 type ModelFull = ModelCardData & {
   description: string | null;
@@ -91,7 +91,6 @@ export default function ModelDetail() {
   }
 
   const mult = Number(model.usage_multiplier);
-  const blended = blendedPrice(model.input_price, model.output_price);
   const discount = Number(model.discount_percent ?? 0);
   const paygLive = model.payg_enabled && (model.input_price != null || model.output_price != null);
 
@@ -145,9 +144,9 @@ export default function ModelDetail() {
         {/* pricing */}
         <Reveal delay={80}>
           <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Spec label={ar ? 'السعر المدمج / 1M' : 'Blended / 1M'} value={blended != null ? `$${blended.toFixed(blended < 1 ? 3 : 2)}` : '—'} mono />
             <Spec label={ar ? 'الإدخال / 1M' : 'Input / 1M'} value={model.input_price != null ? `$${Number(model.input_price).toFixed(Number(model.input_price) < 1 ? 3 : 2)}` : '—'} mono strike={discount > 0 && !!model.input_price} />
             <Spec label={ar ? 'الإخراج / 1M' : 'Output / 1M'} value={model.output_price != null ? `$${Number(model.output_price).toFixed(Number(model.output_price) < 1 ? 3 : 2)}` : '—'} mono strike={discount > 0 && !!model.output_price} />
+            <Spec label={ar ? 'الكاش / 1M' : 'Cache / 1M'} value={model.cache_read_price != null ? `$${Number(model.cache_read_price).toFixed(Number(model.cache_read_price) < 1 ? 3 : 2)}` : '—'} mono />
             <Spec label={ar ? 'السياق' : 'Context'} value={model.context_window ? compactTokens(model.context_window) : '—'} mono />
           </section>
         </Reveal>

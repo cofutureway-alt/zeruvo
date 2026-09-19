@@ -337,12 +337,27 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 
 	useEffect(() => {
 		void (async () => {
-			const [pl, pm, dl, rlq] = await Promise.all([
+			const [fresh, pl, pm, dl, rlq] = await Promise.all([
+				// load the REAL saved pricing straight from the models table —
+				// the table row carries effective (post-discount) prices only
+				supabase.from('models').select(
+					'usage_multiplier,payg_enabled,input_price_per_m,output_price_per_m,cache_read_price_per_m,cache_write_price_per_m,enabled_for_users',
+				).eq('id', model.id).maybeSingle(),
 				supabase.from('plans').select('id,name,active').order('price_usd'),
 				supabase.from('plan_models').select('plan_id').eq('model_id', model.id),
 				supabase.from('model_discounts').select('*').eq('model_id', model.id).eq('active', true).order('created_at', { ascending: false }).limit(1),
 				supabase.from('model_rate_limits').select('*').eq('model_id', model.id).maybeSingle(),
 			]);
+			const f = fresh.data;
+			if (f) {
+				setMult(String(Number(f.usage_multiplier) || 0));
+				setPayg(!!f.payg_enabled);
+				setPin(f.input_price_per_m != null ? String(f.input_price_per_m) : '');
+				setPout(f.output_price_per_m != null ? String(f.output_price_per_m) : '');
+				setPcr(f.cache_read_price_per_m != null ? String(f.cache_read_price_per_m) : '');
+				setPcw(f.cache_write_price_per_m != null ? String(f.cache_write_price_per_m) : '');
+				setVisible(!!f.enabled_for_users);
+			}
 			setPlans((pl.data ?? []) as PlanRow[]);
 			setPlanIds(new Set((pm.data ?? []).map((r: { plan_id: string }) => r.plan_id)));
 			const d = (dl.data ?? [])[0] as DiscountRow | undefined;
@@ -354,15 +369,21 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 	async function save() {
 		setBusy(true);
 		setError(null);
-		const multiplier = Number(mult) || 1;
-		if (multiplier < 1) {
-			setError('Multiplier must be ≥ 1 (leave 1 for no weighting).');
+		const multiplier = Number(mult);
+		if (!Number.isFinite(multiplier) || multiplier < 0) {
+			setError('Multiplier must be 0 or more (0 = free on plans, 1 = no weighting).');
 			setBusy(false);
 			return;
 		}
 		const num = (s: string) => (s.trim() === '' ? null : Number(s));
+		const neg = [pin, pout, pcr, pcw].some((s) => s.trim() !== '' && Number(s) < 0);
+		if (neg) {
+			setError('Prices cannot be negative (0 = free for that bucket).');
+			setBusy(false);
+			return;
+		}
 		if (payg && num(pin) == null && num(pout) == null) {
-			setError('PAYG needs at least an input or output price.');
+			setError('PAYG needs at least an input or output price (0 counts as free).');
 			setBusy(false);
 			return;
 		}
@@ -441,12 +462,12 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 				<label className="mt-3 flex items-center gap-2 text-sm">
 					Usage multiplier
 					<input
-						type="number" min={1} step="any" value={mult}
+						type="number" min={0} step="any" value={mult}
 						onChange={(e) => setMult(e.target.value)}
 						dir="ltr"
 						className="w-20 rounded-md border border-border bg-transparent px-2 py-1 font-data text-xs tabular-nums outline-none focus:border-cyan-500"
 					/>
-					<span className="text-xs text-muted-foreground">×1 = no weighting</span>
+					<span className="text-xs text-muted-foreground">×1 = no weighting · ×0 = free on plans</span>
 				</label>
 				<div className="mt-3 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
 					{plans.map((p) => (
@@ -478,13 +499,15 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 				</label>
 				{payg && (
 					<div className="mt-3 grid grid-cols-2 gap-3">
-						<PriceInput label="Input / 1M" value={pin} onChange={setPin} />
-						<PriceInput label="Output / 1M" value={pout} onChange={setPout} />
-						<PriceInput label="Cache read / 1M" value={pcr} onChange={setPcr} />
-						<PriceInput label="Cache write / 1M" value={pcw} onChange={setPcw} />
+						<PriceInput label="Input / 1M (0 = free)" value={pin} onChange={setPin} />
+						<PriceInput label="Output / 1M (0 = free)" value={pout} onChange={setPout} />
+						<PriceInput label="Cache read / 1M (0 = free)" value={pcr} onChange={setPcr} />
+						<PriceInput label="Cache write / 1M (0 = free)" value={pcw} onChange={setPcw} />
 					</div>
 				)}
-				<p className="mt-2 text-xs text-muted-foreground">A model can be in plans AND support PAYG — users choose their billing mode.</p>
+				<p className="mt-2 text-xs text-muted-foreground">
+					Empty = not priced for that bucket · 0 = free · A model can be in plans AND support PAYG — users choose their billing mode.
+				</p>
 			</fieldset>
 
 			{/* discount */}
@@ -593,8 +616,16 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 	const [description, setDescription] = useState(model.description ?? '');
 	const [quality, setQuality] = useState(model.quality_score?.toString() ?? '');
 	const [featured, setFeatured] = useState(model.is_featured);
+	const [context, setContext] = useState(model.context_window?.toString() ?? '');
+	const [maxOut, setMaxOut] = useState<string>('');
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	// max_output_tokens isn't in the view row — fetch it from the table
+	useEffect(() => {
+		void supabase.from('models').select('max_output_tokens').eq('id', model.id).maybeSingle()
+			.then(({ data }) => setMaxOut(data?.max_output_tokens != null ? String(data.max_output_tokens) : ''));
+	}, [model.id]);
 
 	async function save() {
 		setBusy(true);
@@ -605,11 +636,20 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 			setBusy(false);
 			return;
 		}
+		const ctx = context.trim() === '' ? null : Number(context);
+		if (ctx != null && (!Number.isFinite(ctx) || ctx <= 0)) {
+			setError('Context window must be a positive token count.');
+			setBusy(false);
+			return;
+		}
+		const out = maxOut.trim() === '' ? null : Number(maxOut);
 		const { error } = await supabase.from('models').update({
 			display_name: name.trim() || model.upstream_model_id,
 			description: description.trim() || null,
 			quality_score: q,
 			is_featured: featured,
+			context_window: ctx,
+			max_output_tokens: out,
 		}).eq('id', model.id);
 		if (error) setError(error.message);
 		else onClose();
@@ -635,6 +675,8 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 				<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500" />
 			</label>
 			<div className="mt-3 grid grid-cols-2 gap-3">
+				<PriceInput label="Context window (tokens)" value={context} onChange={setContext} />
+				<PriceInput label="Max output tokens" value={maxOut} onChange={setMaxOut} />
 				<PriceInput label="Quality score (0–5, stars)" value={quality} onChange={setQuality} />
 				<label className="mt-5 flex items-center gap-2 text-sm">
 					<input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="accent-violet-500" />

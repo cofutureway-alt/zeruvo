@@ -24,8 +24,11 @@ export interface ModelCardData {
   tok_per_s?: number | null;
   avg_ttft_ms?: number | null;
   quality_score?: number | null;
+  tags?: string[] | null;
   input_price: number | string | null;
   output_price: number | string | null;
+  cache_read_price?: number | string | null;
+  cache_write_price?: number | string | null;
   discount_percent?: number | string | null;
 }
 
@@ -110,10 +113,49 @@ export function blendedPrice(input: number | string | null, output: number | str
   return (3 * i + o) / 4;
 }
 
+function fmtPrice(p: number): string {
+  return `$${p.toFixed(p < 1 ? 3 : 2)}`;
+}
+
+/** One price bucket: effective price, original struck-through when discounted. */
+function PriceRow({
+  label,
+  effective,
+  discount,
+  free,
+}: {
+  label: string;
+  effective: number | null;
+  discount: number;
+  free: boolean;
+}) {
+  if (effective == null) return null;
+  const base = discount > 0 ? effective / (1 - discount / 100) : effective;
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="font-data text-sm tabular-nums">
+        {discount > 0 && (
+          <span className="me-1.5 text-xs text-muted-foreground/55 line-through">{fmtPrice(base)}</span>
+        )}
+        {free ? (
+          <span className="font-semibold text-emerald-400">Free</span>
+        ) : (
+          <span className={discount > 0 ? 'font-medium text-amber-300' : 'text-foreground'}>{fmtPrice(effective)}</span>
+        )}
+        <span className="ms-1 text-[10px] text-muted-foreground/70">/1M</span>
+      </span>
+    </div>
+  );
+}
+
 export function ModelCard({ model, showAdminBadges = false }: { model: ModelCardData; showAdminBadges?: boolean }) {
-  const blended = blendedPrice(model.input_price, model.output_price);
   const discount = model.discount_percent != null ? Number(model.discount_percent) : 0;
-  const hasPrices = model.input_price != null || model.output_price != null;
+  const inP = model.input_price != null ? Number(model.input_price) : null;
+  const outP = model.output_price != null ? Number(model.output_price) : null;
+  const crP = model.cache_read_price != null ? Number(model.cache_read_price) : null;
+  const hasPrices = inP != null || outP != null;
+  const isFree = (inP === 0 && outP === 0) || (model.tags ?? []).includes('free');
   const available = model.enabled_for_users && (model.is_priced || showAdminBadges);
 
   return (
@@ -149,12 +191,17 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
         ) : null}
       </div>
 
-      {/* badges row */}
-      {(discount > 0 || model.is_featured || !model.is_priced) && (
+      {/* badges row: discount %, free, recommended, admin unpriced */}
+      {(discount > 0 || isFree || model.is_featured || !model.is_priced) && (
         <div className="flex flex-wrap items-center gap-2">
           {discount > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/5 px-3 py-1.5 text-sm font-semibold text-amber-400">
               <BadgePercent size={15} /> {Math.round(discount)}% off
+            </span>
+          )}
+          {isFree && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/60 bg-emerald-500/5 px-3 py-1.5 text-sm font-semibold text-emerald-400">
+              Free
             </span>
           )}
           {model.is_featured && (
@@ -170,31 +217,38 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
         </div>
       )}
 
-      {/* price + context */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">Blended price / 1M</p>
-          <p className="mt-0.5 font-data text-xl font-medium tabular-nums text-foreground">
-            {blended != null ? `$${blended.toFixed(blended < 1 ? 3 : 2)}` : '—'}
-            {hasPrices && <span className="ms-1.5 text-xs text-muted-foreground">in/out</span>}
-          </p>
+      {/* full price breakdown (PAYG) with discount strikethrough */}
+      {hasPrices ? (
+        <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
+          <PriceRow label="Input" effective={inP} discount={discount} free={inP != null && inP === 0} />
+          <PriceRow label="Output" effective={outP} discount={discount} free={outP != null && outP === 0} />
+          <PriceRow label="Cache read" effective={crP} discount={discount} free={crP != null && crP === 0} />
         </div>
-        <div>
-          <p className="text-sm text-muted-foreground">Context</p>
-          <p className="mt-0.5 font-data text-xl font-medium tabular-nums text-foreground">
-            {model.context_window ? compactTokens(model.context_window) : '—'}
-          </p>
+      ) : (
+        <div className="rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm text-muted-foreground">Plan pricing</span>
+            <span className="font-data text-sm tabular-nums text-foreground">
+              ×{Number(model.usage_multiplier) || 0}
+              <span className="ms-1 text-[10px] text-muted-foreground/70">weighted</span>
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* live stats */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-data text-sm text-cyan-300/80">
         <span className="inline-flex items-center gap-1.5">
-          <Gauge size={14} /> {model.tok_per_s ? `${Math.round(Number(model.tok_per_s))} tok/s` : 'n/a'}
+          <Layers size={14} /> {model.context_window ? compactTokens(model.context_window) : '—'}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <Layers size={14} /> {model.avg_ttft_ms ? `${(Number(model.avg_ttft_ms) / 1000).toFixed(2)}s ttft` : `${Number(model.usage_multiplier) || 1}× plan`}
+          <Gauge size={14} /> {model.tok_per_s ? `${Math.round(Number(model.tok_per_s))} tok/s` : 'n/a'}
         </span>
+        {model.avg_ttft_ms ? (
+          <span className="inline-flex items-center gap-1.5">
+            {(Number(model.avg_ttft_ms) / 1000).toFixed(2)}s ttft
+          </span>
+        ) : null}
         {model.supports_reasoning && (
           <span className="rounded border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-300">
             Reasoning

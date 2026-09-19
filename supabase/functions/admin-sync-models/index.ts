@@ -144,7 +144,7 @@ if (req.method === 'OPTIONS') {
 
 	const { data: existing } = await admin
 		.from('models')
-		.select('id,upstream_model_id,enabled_for_users,usage_multiplier,tags')
+		.select('id,upstream_model_id,enabled_for_users,usage_multiplier,tags,context_window,max_output_tokens')
 		.eq('provider_id', body.provider_id);
 	const byUpstream = new Map((existing ?? []).map((m) => [m.upstream_model_id, m]));
 
@@ -152,10 +152,38 @@ if (req.method === 'OPTIONS') {
 	// and every vendor owns an auto-managed model category
 	const { data: vendors } = await admin.from('ai_providers').select('slug,display_name,prefixes,sort_order');
 	const vendorList = vendors ?? [];
+	// unprefixed ids (custom OpenAI-compatible endpoints) fall back to
+	// keyword matching so models still get a real vendor + icon
+	const KEYWORDS: Array<[RegExp, string]> = [
+		[/claude/i, 'anthropic'],
+		[/gpt|chatgpt|(^|\/)o[134](-|$)|davinci|codex/i, 'openai'],
+		[/gemini|gemma|palm/i, 'google'],
+		[/llama|llava/i, 'meta-llama'],
+		[/deepseek/i, 'deepseek'],
+		[/grok/i, 'x-ai'],
+		[/mistral|mixtral|magistral|pixtral|devstral/i, 'mistralai'],
+		[/qwen|qwq/i, 'qwen'],
+		[/kimi/i, 'moonshotai'],
+		[/glm|chatglm/i, 'z-ai'],
+		[/minimax|abab/i, 'minimax'],
+		[/phi[- ]?\d/i, 'microsoft'],
+		[/nova[- ]?(micro|lite|pro|premier)|titan/i, 'amazon'],
+		[/command[- ]?r/i, 'cohere'],
+		[/sonar/i, 'perplexity'],
+		[/ernie/i, 'baidu'],
+		[/doubao|seed-?oss|seedream/i, 'bytedance'],
+		[/hunyuan/i, 'tencent'],
+	];
 	function vendorFor(modelId: string): { slug: string; name: string } {
 		const prefix = modelId.split('/')[0] ?? '';
 		const hit = vendorList.find((v) => v.slug !== 'other' && (v.prefixes ?? []).includes(prefix));
-		return hit ? { slug: hit.slug, name: hit.display_name } : { slug: 'other', name: 'Other' };
+		if (hit) return { slug: hit.slug, name: hit.display_name };
+		const kw = KEYWORDS.find(([re]) => re.test(modelId));
+		if (kw) {
+			const kv = vendorList.find((v) => v.slug === kw[1]);
+			if (kv) return { slug: kv.slug, name: kv.display_name };
+		}
+		return { slug: 'other', name: 'Other' };
 	}
 	const categoryIds = new Map<string, string>();
 	async function categoryIdFor(slug: string, name: string, sortOrder: number): Promise<string | null> {
@@ -212,16 +240,17 @@ if (req.method === 'OPTIONS') {
 			added++;
 		} else if (isRich) {
 			// refresh metadata but preserve admin choices (pricing, enablement)
+			// and admin-set context/max-output — a sync only FILLS missing values
 			const { error: updErr } = await admin.from('models').update({
 				display_name: row.display_name,
 				description: row.description,
-				context_window: row.context_window,
+				context_window: prev.context_window ?? row.context_window,
 				tags: row.tags,
 				input_modalities: row.input_modalities,
 				output_modalities: row.output_modalities,
 				supports_reasoning: row.supports_reasoning,
 				supports_effort: row.supports_effort,
-				max_output_tokens: row.max_output_tokens,
+				max_output_tokens: prev.max_output_tokens ?? row.max_output_tokens,
 				vendor_slug: row.vendor_slug,
 				category_id: row.category_id,
 			}).eq('id', prev.id);
