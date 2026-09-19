@@ -740,3 +740,22 @@ transform: scaleX(1);
     }
   }
 }
+
+/* ---------- native form popups follow the theme ---------- */
+/* Without this, <select> dropdown lists render with the OS light chrome
+   (white background + unreadable options) inside the dark console. */
+html.dark {
+  color-scheme: dark;
+}
+html:not(.dark) {
+  color-scheme: light;
+}
+.dark select option,
+.dark select optgroup {
+  background-color: var(--popover, #0c0f14);
+  color: var(--popover-foreground, #e4e4e7);
+}
+.dark select option:checked,
+.dark select option:hover {
+  background-color: var(--accent, #1c2129);
+}

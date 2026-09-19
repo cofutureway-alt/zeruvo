@@ -97,13 +97,16 @@ function priceCell(base: number | null, discount: number | null): { text: string
 	return { text: `$${base.toFixed(base < 1 ? 3 : 2)}`, struck: !!(discount && discount > 0) };
 }
 
+const PAGE_SIZE = 100;
+
 export default function AdminModels() {
 	const [email, setEmail] = useState('');
 	const [rows, setRows] = useState<AdminModelRow[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [query, setQuery] = useState('');
 	const [vendor, setVendor] = useState('any');
-	const [status, setStatus] = useState('any');
+	const [status, setStatus] = useState('selected');
+	const [page, setPage] = useState(1);
 	const [modal, setModal] = useState<Modal | null>(null);
 
 	const load = useCallback(async () => {
@@ -133,13 +136,26 @@ export default function AdminModels() {
 		return rows.filter((r) => {
 			if (q && !r.display_name.toLowerCase().includes(q) && !r.upstream_model_id.toLowerCase().includes(q)) return false;
 			if (vendor !== 'any' && (r.vendor_slug ?? 'other') !== vendor) return false;
+			if (status === 'selected' && !r.enabled_for_users) return false;
 			if (status === 'priced' && !r.is_priced) return false;
-			if (status === 'unpriced' && r.is_priced) return false;
+			if (status === 'unpriced' && (r.is_priced || !r.enabled_for_users)) return false;
 			if (status === 'hidden' && r.enabled_for_users) return false;
 			if (status === 'custom' && !r.is_custom) return false;
 			return true;
 		});
 	}, [rows, query, vendor, status]);
+
+	// reset to the first page whenever the filters change
+	useEffect(() => {
+		setPage(1);
+	}, [query, vendor, status]);
+
+	const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+	const safePage = Math.min(page, pageCount);
+	const paged = useMemo(
+		() => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+		[filtered, safePage],
+	);
 
 	return (
 		<DashboardShell variant="admin" email={email}>
@@ -177,19 +193,24 @@ export default function AdminModels() {
 						{vendors.map((v) => <option key={v} value={v}>{vendorLabel(v)}</option>)}
 					</select>
 					<select value={status} onChange={(e) => setStatus(e.target.value)} className="h-9 rounded-lg border border-border bg-transparent px-3 text-sm outline-none focus:border-cyan-500">
-						<option value="any">All statuses</option>
+						<option value="selected">Selected models</option>
+						<option value="all">All synced models</option>
 						<option value="priced">Priced</option>
 						<option value="unpriced">Unpriced</option>
 						<option value="hidden">Hidden from users</option>
 						<option value="custom">Custom models</option>
 					</select>
+					<span className="font-data text-xs text-muted-foreground">
+						{filtered.length} model{filtered.length === 1 ? '' : 's'}
+					</span>
 				</div>
 
 				{loading ? (
 					<div className="rounded-xl border border-border px-6 py-16 text-center text-sm text-muted-foreground">Loading catalog…</div>
 				) : filtered.length === 0 ? (
-					<EmptyState icon={<Tags size={26} />} title="No models match" hint="Sync models from a provider first (Providers page), then price them here." />
+					<EmptyState icon={<Tags size={26} />} title="No models match" hint="Select models from a provider first (Providers page), then price them here." />
 				) : (
+					<>
 					<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
 						<table className="w-full min-w-[1080px] text-sm">
 							<thead className="bg-zinc-900/60 font-data text-[11px] uppercase tracking-wider text-[var(--nx-muted)]">
@@ -207,7 +228,7 @@ export default function AdminModels() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-[var(--nx-border)]">
-								{filtered.map((m) => {
+								{paged.map((m) => {
 									const inP = priceCell(m.input_price_per_m, m.discount_percent);
 									const outP = priceCell(m.output_price_per_m, m.discount_percent);
 									return (
@@ -256,6 +277,30 @@ export default function AdminModels() {
 							</tbody>
 						</table>
 					</div>
+
+					{/* pagination — 100 rows per page */}
+					<div className="flex items-center justify-between gap-3 pt-3">
+						<p className="font-data text-xs text-muted-foreground">
+							Page {safePage} / {pageCount} · showing {paged.length} of {filtered.length}
+						</p>
+						<div className="flex items-center gap-2">
+							<button
+								onClick={() => setPage((p) => Math.max(1, p - 1))}
+								disabled={safePage <= 1}
+								className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40 hover:border-cyan-500/50"
+							>
+								Prev
+							</button>
+							<button
+								onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+								disabled={safePage >= pageCount}
+								className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40 hover:border-cyan-500/50"
+							>
+								Next
+							</button>
+						</div>
+					</div>
+					</>
 				)}
 			</div>
 

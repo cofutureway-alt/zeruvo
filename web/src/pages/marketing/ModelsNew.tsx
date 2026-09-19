@@ -43,6 +43,8 @@ const CONTEXT_BANDS = [
   { key: 'xl', ar: '> 512K', en: '> 512K', test: (n: number) => n >= 512_000 },
 ] as const;
 
+const PAGE_SIZE = 100;
+
 const PRICE_BANDS = [
   { key: 'any', ar: 'الكل', en: 'Any', test: () => true },
   { key: 'low', ar: '< $1', en: '< $1', test: (n: number) => n < 1 },
@@ -83,6 +85,7 @@ export default function Models() {
   const [priceBand, setPriceBand] = useState('any');
   const [sort, setSort] = useState<'name' | 'price_asc' | 'price_desc' | 'context'>('name');
   const [showFilters, setShowFilters] = useState(true);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     void (async () => {
@@ -140,9 +143,21 @@ export default function Models() {
     return list;
   }, [visible, sort]);
 
-  const promotional = sorted.filter((m) => Number(m.discount_percent ?? 0) > 0);
-  const recommended = sorted.filter((m) => m.is_featured && Number(m.discount_percent ?? 0) === 0);
-  const rest = sorted.filter((m) => !promotional.includes(m) && !recommended.includes(m));
+  // 100 models per page, reset when any filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [query, vendor, cap, band, priceBand, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = useMemo(
+    () => sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [sorted, safePage],
+  );
+
+  const promotional = pageRows.filter((m) => Number(m.discount_percent ?? 0) > 0);
+  const recommended = pageRows.filter((m) => m.is_featured && Number(m.discount_percent ?? 0) === 0);
+  const rest = pageRows.filter((m) => !promotional.includes(m) && !recommended.includes(m));
   const grouped = promotional.length > 0 || recommended.length > 0;
 
   const ar = i18n.language === 'ar';
@@ -303,6 +318,29 @@ export default function Models() {
                       {rest.map((m) => <ModelCard key={m.id} model={m} showAdminBadges={!!isAdmin} />)}
                     </div>
                   </section>
+                )}
+
+                {/* pagination — 100 models per page */}
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0 }); }}
+                      disabled={safePage <= 1}
+                      className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-40 hover:border-cyan-500/50"
+                    >
+                      {ar ? 'السابق' : 'Prev'}
+                    </button>
+                    <span className="font-data text-sm text-muted-foreground">
+                      {safePage} / {pageCount}
+                    </span>
+                    <button
+                      onClick={() => { setPage((p) => Math.min(pageCount, p + 1)); window.scrollTo({ top: 0 }); }}
+                      disabled={safePage >= pageCount}
+                      className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-40 hover:border-cyan-500/50"
+                    >
+                      {ar ? 'التالي' : 'Next'}
+                    </button>
+                  </div>
                 )}
               </>
             )}
