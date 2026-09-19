@@ -130,18 +130,20 @@ function PriceRow({
   free: boolean;
 }) {
   if (effective == null) return null;
-  const base = discount > 0 ? effective / (1 - discount / 100) : effective;
+  // a 100% discount leaves effective at 0 — the base can't be reconstructed
+  const base = discount > 0 && discount < 100 ? effective / (1 - discount / 100) : effective;
+  const struck = discount > 0 && discount < 100;
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="font-data text-sm tabular-nums">
-        {discount > 0 && (
+        {struck && (
           <span className="me-1.5 text-xs text-muted-foreground/55 line-through">{fmtPrice(base)}</span>
         )}
         {free ? (
           <span className="font-semibold text-emerald-400">Free</span>
         ) : (
-          <span className={discount > 0 ? 'font-medium text-amber-300' : 'text-foreground'}>{fmtPrice(effective)}</span>
+          <span className={struck ? 'font-medium text-amber-300' : 'text-foreground'}>{fmtPrice(effective)}</span>
         )}
         <span className="ms-1 text-[10px] text-muted-foreground/70">/1M</span>
       </span>

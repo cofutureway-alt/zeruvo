@@ -116,12 +116,20 @@ export default function AdminModels() {
 		setLoading(true);
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) setEmail(user.email ?? '');
-		const { data } = await supabase
-			.from('models_public_view')
-			.select('*')
-			.order('display_name')
-			.limit(1000);
-		setRows((data ?? []) as unknown as AdminModelRow[]);
+		// page through everything — PostgREST caps single responses at 1000
+		// rows and the catalog is bigger than that once several providers sync
+		const all: unknown[] = [];
+		for (let from = 0; from < 20_000; from += 1000) {
+			const { data } = await supabase
+				.from('models_public_view')
+				.select('*')
+				.order('display_name')
+				.range(from, from + 999);
+			if (!data?.length) break;
+			all.push(...data);
+			if (data.length < 1000) break;
+		}
+		setRows(all as unknown as AdminModelRow[]);
 		setLoading(false);
 	}, []);
 
@@ -435,13 +443,18 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 		if (mErr) { setError(mErr.message); setBusy(false); return; }
 
 		// plan membership sync (delete-all + re-insert of the delta)
-		const { data: prevRows } = await supabase.from('plan_models').select('plan_id').eq('model_id', model.id);
+		const { data: prevRows, error: prevErr } = await supabase.from('plan_models').select('plan_id').eq('model_id', model.id);
+		if (prevErr) { setError(prevErr.message); setBusy(false); return; }
 		const prev = new Set((prevRows ?? []).map((r: { plan_id: string }) => r.plan_id));
 		const toAdd = [...planIds].filter((id) => !prev.has(id));
 		const toRemove = [...prev].filter((id) => !planIds.has(id));
-		if (toAdd.length) await supabase.from('plan_models').insert(toAdd.map((plan_id) => ({ plan_id, model_id: model.id })));
+		if (toAdd.length) {
+			const { error: addErr } = await supabase.from('plan_models').insert(toAdd.map((plan_id) => ({ plan_id, model_id: model.id })));
+			if (addErr) { setError(addErr.message); setBusy(false); return; }
+		}
 		for (const plan_id of toRemove) {
-			await supabase.from('plan_models').delete().eq('plan_id', plan_id).eq('model_id', model.id);
+			const { error: rmErr } = await supabase.from('plan_models').delete().eq('plan_id', plan_id).eq('model_id', model.id);
+			if (rmErr) { setError(rmErr.message); setBusy(false); return; }
 		}
 
 		// discount: replace the model's active discounts with the edited one.

@@ -230,7 +230,9 @@ async function handleChat(
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_disabled', model_id: resolved.model_id, upstream_model: requestedModel });
     return json({ error: { type: 'model_disabled', message: 'Model not available' } }, 403);
   }
-  const multiplier = Number(resolved.usage_multiplier) || 1;
+  // ×0 is a legal value ("free on plans") — only null/NaN falls back to ×1
+  const n = Number(resolved.usage_multiplier);
+  const multiplier = Number.isFinite(n) ? n : 1;
   const paygPrices = {
     in: resolved.price_in != null ? Number(resolved.price_in) : null,
     out: resolved.price_out != null ? Number(resolved.price_out) : null,

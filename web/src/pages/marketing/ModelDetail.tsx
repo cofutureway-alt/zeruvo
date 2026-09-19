@@ -144,11 +144,16 @@ export default function ModelDetail() {
         {/* pricing */}
         <Reveal delay={80}>
           <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Spec label={ar ? 'الإدخال / 1M' : 'Input / 1M'} value={model.input_price != null ? `$${Number(model.input_price).toFixed(Number(model.input_price) < 1 ? 3 : 2)}` : '—'} mono strike={discount > 0 && !!model.input_price} />
-            <Spec label={ar ? 'الإخراج / 1M' : 'Output / 1M'} value={model.output_price != null ? `$${Number(model.output_price).toFixed(Number(model.output_price) < 1 ? 3 : 2)}` : '—'} mono strike={discount > 0 && !!model.output_price} />
+            <Spec label={ar ? 'الإدخال / 1M' : 'Input / 1M'} value={model.input_price != null ? `$${Number(model.input_price).toFixed(Number(model.input_price) < 1 ? 3 : 2)}` : '—'} mono />
+            <Spec label={ar ? 'الإخراج / 1M' : 'Output / 1M'} value={model.output_price != null ? `$${Number(model.output_price).toFixed(Number(model.output_price) < 1 ? 3 : 2)}` : '—'} mono />
             <Spec label={ar ? 'الكاش / 1M' : 'Cache / 1M'} value={model.cache_read_price != null ? `$${Number(model.cache_read_price).toFixed(Number(model.cache_read_price) < 1 ? 3 : 2)}` : '—'} mono />
             <Spec label={ar ? 'السياق' : 'Context'} value={model.context_window ? compactTokens(model.context_window) : '—'} mono />
           </section>
+          {discount > 0 && (
+            <p className="mt-2 text-xs font-medium text-amber-400">
+              {ar ? `أسعار فعّالة بعد خصم ${Math.round(discount)}% — الأصل ظاهر مشطوباً في كروت الكتالوج` : `Effective prices after a ${Math.round(discount)}% discount — see the struck original on catalog cards`}
+            </p>
+          )}
         </Reveal>
 
         {/* capabilities */}

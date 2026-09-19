@@ -49,6 +49,7 @@ Deno.serve(async (req) => {
 const CORS_HEADERS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
+	'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
 if (req.method === 'OPTIONS') {
@@ -130,6 +131,17 @@ if (req.method === 'OPTIONS') {
 	// wallet top-ups credit the wallet and stop here — no subscription logic
 	if (paidMeta?.type === 'topup') {
 		const topupUsd = Number(paidMeta.amount_usd ?? payment.amount_usd_display);
+		// claim the payment row first: only ONE concurrent delivery can flip
+		// pending→paid, so replays/retries can never double-credit the wallet
+		const { data: claimed } = await admin.from('payments')
+			.update({
+				status: 'paid',
+				method: body.data.method ?? 'card',
+				meta: { ...(payment.meta as object), transaction_id: body.data.transactionId },
+			})
+			.eq('id', payment.id).eq('status', 'pending').select('id');
+		if (!claimed?.length) return Response.json({ ok: true, handled: 'already-paid' }, { headers: CORS_HEADERS })
+
 		const { error: creditErr } = await admin.rpc('wallet_credit', {
 			p_user_id: payment.user_id,
 			p_amount_usd: topupUsd,
@@ -139,14 +151,10 @@ if (req.method === 'OPTIONS') {
 		});
 		if (creditErr) {
 			console.error('wallet_credit failed:', JSON.stringify(creditErr));
-			// payment stays pending → a replayed webhook can still credit the wallet
+			// release the claim → a retried webhook can still credit the wallet
+			await admin.from('payments').update({ status: 'pending' }).eq('id', payment.id);
 			return Response.json({ error: 'wallet credit failed' }, { status: 500, headers: CORS_HEADERS })
 		}
-		await admin.from('payments').update({
-			status: 'paid',
-			method: body.data.method ?? 'card',
-			meta: { ...(payment.meta as object), transaction_id: body.data.transactionId },
-		}).eq('id', payment.id);
 		return Response.json({ ok: true, handled: 'wallet_topup' }, { headers: CORS_HEADERS })
 	}
 
@@ -176,18 +184,28 @@ if (req.method === 'OPTIONS') {
 	else if (plan.duration_unit === 'months') expires.setMonth(expires.getMonth() + plan.duration_count);
 	else expires.setFullYear(expires.getFullYear() + plan.duration_count);
 
+	// claim before granting: concurrent replays lose the pending→paid race
+	const { data: claimed, error: claimErr } = await admin.from('payments')
+		.update({
+			status: 'paid',
+			method: body.data.method ?? 'card',
+			meta: { ...(payment.meta as object), transaction_id: body.data.transactionId },
+		})
+		.eq('id', payment.id).eq('status', 'pending').select('id');
+	if (claimErr) return Response.json({ error: claimErr.message }, { status: 500, headers: CORS_HEADERS })
+	if (!claimed?.length) return Response.json({ ok: true, handled: 'already-paid' }, { headers: CORS_HEADERS })
+
 	await admin.from('subscriptions').update({ status: 'canceled' })
 		.eq('user_id', payment.user_id).eq('status', 'active');
-	await admin.from('subscriptions').insert({
+	const { error: subErr } = await admin.from('subscriptions').insert({
 		user_id: payment.user_id, plan_id: planId,
 		started_at: now.toISOString(), expires_at: expires.toISOString(), status: 'active',
 	});
-
-	await admin.from('payments').update({
-		status: 'paid',
-		method: body.data.method ?? 'card',
-		meta: { ...(payment.meta as object), transaction_id: body.data.transactionId },
-	}).eq('id', payment.id);
+	if (subErr) {
+		// release the claim → a retried webhook can still grant the plan
+		await admin.from('payments').update({ status: 'pending' }).eq('id', payment.id);
+		return Response.json({ error: 'subscription grant failed' }, { status: 500, headers: CORS_HEADERS })
+	}
 
 	// record coupon redemption only on successful payment
 	// Uses the atomic redeem_coupon RPC so that:

@@ -198,7 +198,7 @@ export default function CreditOffers() {
 			<ConfirmDialog
 				open={!!confirmOffer}
 				title={`Delete offer "${confirmOffer?.name ?? ''}"?`}
-				body="Claims keep their remaining credit, but no new users can receive this offer."
+				body="The offer disappears from the catalog and any unspent credit it granted is removed from user wallets."
 				error={deleteError}
 				busy={deleting}
 				confirmLabel="Delete offer"

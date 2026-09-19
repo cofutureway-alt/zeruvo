@@ -150,11 +150,13 @@ export function costUsd(
 	u: UsageBreakdown,
 	prices: { in?: number | null; out?: number | null; cacheRead?: number | null; cacheWrite?: number | null },
 ): number {
-	const raw =
+	// prices are USD per 1M tokens — same unit reserve_request holds against
+	const raw = (
 		(prices.in ?? 0) * u.tokensIn +
 		(prices.out ?? 0) * u.tokensOut +
 		(prices.cacheRead ?? 0) * u.cacheRead +
-		(prices.cacheWrite ?? 0) * u.cacheWrite;
+		(prices.cacheWrite ?? 0) * u.cacheWrite
+	) / 1_000_000;
 	// micro-dollar rounding: never rounds in the customer's favor
 	return Math.ceil(raw * 1_000_000) / 1_000_000;
 }

@@ -31,6 +31,7 @@ async function encrypt(plaintext: string, dekB64: string): Promise<string> {
 const CORS_HEADERS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-kashier-signature',
+	'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
 function json(body: unknown, status = 200): Response {

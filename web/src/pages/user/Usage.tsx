@@ -40,14 +40,22 @@ export default function Usage() {
 			if (user) setEmail(user.email ?? '');
 			const days = RANGES[range] ?? 30;
 			const since = new Date(Date.now() - days * 86_400_000).toISOString();
-			const { data } = await supabase
-				.from('request_logs')
-				.select('id,model_id,upstream_model,tokens_in,tokens_out,weighted_tokens,cost_usd,billing_mode,latency_ms,ttft_ms,status,error_code,created_at,models(display_name,vendor_slug)')
-				.eq('user_id', user!.id)
-				.gte('created_at', since)
-				.order('created_at', { ascending: false })
-				.limit(10000);
-			setLogs((data ?? []) as unknown as LogRow[]);
+			// PostgREST caps single responses at max_rows (1000) — page through
+			// in chunks so the KPIs aggregate the FULL range, not the newest 1k
+			const collected: unknown[] = [];
+			for (let from = 0; from < 50_000; from += 1000) {
+				const { data } = await supabase
+					.from('request_logs')
+					.select('id,model_id,upstream_model,tokens_in,tokens_out,weighted_tokens,cost_usd,billing_mode,latency_ms,ttft_ms,status,error_code,created_at,models(display_name,vendor_slug)')
+					.eq('user_id', user!.id)
+					.gte('created_at', since)
+					.order('created_at', { ascending: false })
+					.range(from, from + 999);
+				if (!data?.length) break;
+				collected.push(...data);
+				if (data.length < 1000) break;
+			}
+			setLogs(collected as unknown as LogRow[]);
 			setLoading(false);
 		})();
 	}, [range]);

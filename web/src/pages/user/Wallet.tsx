@@ -256,7 +256,8 @@ export default function Wallet() {
 											) : o.needs_topup ? (
 												<button
 													onClick={() => {
-														setAmount(Math.max(min, Number(o.require_topup_usd ?? min)));
+														// preset the gate amount, clamped to the wallet bounds
+														setAmount(Math.min(max, Math.max(min, Number(o.require_topup_usd ?? min))));
 														setCustom('');
 														setError(null);
 														document.getElementById('wallet-topup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
