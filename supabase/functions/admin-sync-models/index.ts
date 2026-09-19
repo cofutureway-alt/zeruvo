@@ -73,6 +73,50 @@ function metadataRow(m: ORModel, vendorSlug: string, categoryId: string | null) 
 	};
 }
 
+// ---- OpenRouter public catalog: fallback context/metadata for providers
+// whose /models endpoint carries no context_length (custom gateways etc.)
+let orCatalog: Promise<Map<string, ORModel>> | null = null;
+function orMap(): Promise<Map<string, ORModel>> {
+	if (!orCatalog) {
+		orCatalog = (async () => {
+			const map = new Map<string, ORModel>();
+			try {
+				const r = await fetch('https://openrouter.ai/api/v1/models', {
+					headers: { 'HTTP-Referer': 'https://zeruvo.online' },
+				});
+				if (r.ok) {
+					const j = await r.json();
+					for (const m of (j.data ?? []) as ORModel[]) {
+						if (m.context_length == null) continue;
+						const norm = m.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+						if (!map.has(m.id)) map.set(m.id, m);
+						const short = m.id.split('/').pop() ?? m.id;
+						// prefer the non-variant id for a short name ("x" over "x:free")
+						if (!map.has(short) && !short.includes(':')) map.set(short, m);
+						if (!map.has(`bare:${short.split(':')[0]}`)) map.set(`bare:${short.split(':')[0]}`, m);
+						if (!map.has(`norm:${norm}`)) map.set(`norm:${norm}`, m);
+					}
+				}
+			} catch {
+				// catalog unavailable — enrichment silently skips
+			}
+			return map;
+		})();
+	}
+	return orCatalog;
+}
+
+async function orLookup(modelId: string): Promise<ORModel | null> {
+	const map = await orMap();
+	if (map.size === 0) return null;
+	const short = modelId.split('/').pop() ?? modelId;
+	return map.get(modelId)
+		?? map.get(short)
+		?? map.get(`bare:${short.split(':')[0]}`)
+		?? map.get(`norm:${modelId.toLowerCase().replace(/[^a-z0-9]/g, '')}`)
+		?? null;
+}
+
 Deno.serve(async (req) => {
 // CORS: the SPA calls these functions directly from the browser
 const CORS_HEADERS = {
@@ -96,8 +140,31 @@ if (req.method === 'OPTIONS') {
 	const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single();
 	if (profile?.role !== 'admin') return Response.json({ error: 'forbidden' }, { status: 403, headers: CORS_HEADERS })
 
-	let body: { provider_id?: string };
+	let body: { provider_id?: string; action?: string };
 	try { body = await req.json(); } catch { return Response.json({ error: 'invalid json' }, { status: 400, headers: CORS_HEADERS }) }
+
+	// stand-alone sweep: fill every model that lacks a context window from
+	// OpenRouter's public catalog (no provider/key needed)
+	if (body.action === 'enrich_context') {
+		const { data: targets } = await admin
+			.from('models')
+			.select('id,upstream_model_id,context_window,max_output_tokens')
+			.is('context_window', null)
+			.limit(2000);
+		let filled = 0;
+		for (const t of targets ?? []) {
+			const or = await orLookup(t.upstream_model_id);
+			if (!or) continue;
+			const patch: Record<string, unknown> = { context_window: or.context_length };
+			if (t.max_output_tokens == null && or.top_provider?.max_completion_tokens != null) {
+				patch.max_output_tokens = or.top_provider.max_completion_tokens;
+			}
+			const { error } = await admin.from('models').update(patch).eq('id', t.id);
+			if (!error) filled++;
+		}
+		return Response.json({ scanned: targets?.length ?? 0, enriched: filled }, { headers: CORS_HEADERS });
+	}
+
 	if (!body.provider_id) return Response.json({ error: 'provider_id required' }, { status: 400, headers: CORS_HEADERS })
 
 	const { data: provider } = await admin.from('providers').select('*').eq('id', body.provider_id).single();
@@ -232,6 +299,16 @@ if (req.method === 'OPTIONS') {
 				vendor_slug: vendor.slug,
 				category_id: catId,
 			};
+
+		// provider catalog lacks context metadata? fall back to OpenRouter's
+		// public catalog (fills the row for inserts and null-preserved updates)
+		if (row.context_window == null) {
+			const or = await orLookup(m.id);
+			if (or) {
+				row.context_window = or.context_length ?? null;
+				if (row.max_output_tokens == null) row.max_output_tokens = or.top_provider?.max_completion_tokens ?? null;
+			}
+		}
 
 		if (!prev) {
 			row.enabled_for_users = false;

@@ -1,7 +1,7 @@
 // ModelCard — the dark catalog card (provider mark, availability, discount,
 // blended price / context, throughput stats, modality I/O icons, rating).
 import { Link } from 'react-router-dom';
-import { CheckCircle2, BadgePercent, Gauge, Layers, Star, Sparkles } from 'lucide-react';
+import { CheckCircle2, BadgePercent, Layers, Star, Sparkles } from 'lucide-react';
 import { VendorMark, vendorLabel } from '../design-system/vendor-marks';
 import { compactTokens } from './console-kit';
 
@@ -155,6 +155,7 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
   const outP = model.output_price != null ? Number(model.output_price) : null;
   const crP = model.cache_read_price != null ? Number(model.cache_read_price) : null;
   const hasPrices = inP != null || outP != null;
+  const mult = Number(model.usage_multiplier) || 0;
   const isFree = (inP === 0 && outP === 0) || (model.tags ?? []).includes('free');
   const available = model.enabled_for_users && (model.is_priced || showAdminBadges);
 
@@ -217,38 +218,35 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
         </div>
       )}
 
-      {/* full price breakdown (PAYG) with discount strikethrough */}
-      {hasPrices ? (
+      {/* price box: plan multiplier always visible + PAYG breakdown */}
+      {(hasPrices || mult !== 1) && (
         <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
+          {mult !== 1 && (
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-muted-foreground">Plan</span>
+              <span className="font-data text-sm tabular-nums">
+                {mult === 0 ? (
+                  <span className="font-semibold text-emerald-400">Free on plans</span>
+                ) : (
+                  <>
+                    <span className={discount > 0 && hasPrices ? 'text-foreground' : 'font-medium text-foreground'}>×{mult}</span>
+                    <span className="ms-1 text-[10px] text-muted-foreground/70">weighted</span>
+                  </>
+                )}
+              </span>
+            </div>
+          )}
           <PriceRow label="Input" effective={inP} discount={discount} free={inP != null && inP === 0} />
           <PriceRow label="Output" effective={outP} discount={discount} free={outP != null && outP === 0} />
           <PriceRow label="Cache read" effective={crP} discount={discount} free={crP != null && crP === 0} />
         </div>
-      ) : (
-        <div className="rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Plan pricing</span>
-            <span className="font-data text-sm tabular-nums text-foreground">
-              ×{Number(model.usage_multiplier) || 0}
-              <span className="ms-1 text-[10px] text-muted-foreground/70">weighted</span>
-            </span>
-          </div>
-        </div>
       )}
 
-      {/* live stats */}
+      {/* stats: context + reasoning (live throughput lives in the admin table) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-data text-sm text-cyan-300/80">
         <span className="inline-flex items-center gap-1.5">
           <Layers size={14} /> {model.context_window ? compactTokens(model.context_window) : '—'}
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Gauge size={14} /> {model.tok_per_s ? `${Math.round(Number(model.tok_per_s))} tok/s` : 'n/a'}
-        </span>
-        {model.avg_ttft_ms ? (
-          <span className="inline-flex items-center gap-1.5">
-            {(Number(model.avg_ttft_ms) / 1000).toFixed(2)}s ttft
-          </span>
-        ) : null}
         {model.supports_reasoning && (
           <span className="rounded border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-300">
             Reasoning

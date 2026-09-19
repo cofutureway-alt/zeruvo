@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	Search, Tags, Star, Percent, Gauge, Save, X, Sparkles, Pencil,
-	EyeOff, RefreshCw, Type, Image as ImageIcon, AudioLines, Video,
+	EyeOff, RefreshCw, Type, Image as ImageIcon, AudioLines, Video, Layers,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { edgeCall } from '../../lib/admin-api';
 import { DashboardShell } from '../../components/DashboardShell';
 import { PageHeader, Pill, EmptyState, compactTokens } from '../../components/console-kit';
 import { VendorMark, vendorLabel } from '../../design-system/vendor-marks';
@@ -108,6 +109,8 @@ export default function AdminModels() {
 	const [status, setStatus] = useState('selected');
 	const [page, setPage] = useState(1);
 	const [modal, setModal] = useState<Modal | null>(null);
+	const [enriching, setEnriching] = useState(false);
+	const [enrichMsg, setEnrichMsg] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -125,6 +128,20 @@ export default function AdminModels() {
 	useEffect(() => {
 		void load();
 	}, [load]);
+
+	// fill missing context windows from OpenRouter's public catalog
+	async function enrichContext() {
+		setEnriching(true);
+		setEnrichMsg(null);
+		const res = await edgeCall<{ enriched?: number; scanned?: number; error?: string }>(
+			'admin-sync-models',
+			{ action: 'enrich_context' },
+		);
+		setEnriching(false);
+		if (res?.error) { setEnrichMsg(res.error); return; }
+		setEnrichMsg(`Filled context for ${res?.enriched ?? 0} of ${res?.scanned ?? 0} models that were missing one.`);
+		await load();
+	}
 
 	const vendors = useMemo(
 		() => [...new Set(rows.map((r) => r.vendor_slug ?? 'other'))].sort((a, b) => vendorLabel(a).localeCompare(vendorLabel(b))),
@@ -166,6 +183,14 @@ export default function AdminModels() {
 					actions={
 						<>
 							<button
+								onClick={() => void enrichContext()}
+								disabled={enriching}
+								title="Fill missing context windows from OpenRouter's public catalog"
+								className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-cyan-500/50 disabled:opacity-40"
+							>
+								<Layers size={14} className={enriching ? 'animate-pulse' : ''} /> {enriching ? 'Filling…' : 'Fill missing context'}
+							</button>
+							<button
 								onClick={() => setModal({ kind: 'custom' })}
 								className="flex items-center gap-2 rounded-lg border border-violet-500/50 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20"
 							>
@@ -177,6 +202,10 @@ export default function AdminModels() {
 						</>
 					}
 				/>
+
+				{enrichMsg && (
+					<p className="rounded-lg bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">{enrichMsg}</p>
+				)}
 
 				<div className="flex flex-wrap items-center gap-2">
 					<label className="relative min-w-52 flex-1">
@@ -624,6 +653,7 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 	const [description, setDescription] = useState(model.description ?? '');
 	const [quality, setQuality] = useState(model.quality_score?.toString() ?? '');
 	const [featured, setFeatured] = useState(model.is_featured);
+	const [visible, setVisible] = useState(model.enabled_for_users);
 	const [context, setContext] = useState(model.context_window?.toString() ?? '');
 	const [maxOut, setMaxOut] = useState<string>('');
 	const [busy, setBusy] = useState(false);
@@ -656,6 +686,7 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 			description: description.trim() || null,
 			quality_score: q,
 			is_featured: featured,
+			enabled_for_users: visible,
 			context_window: ctx,
 			max_output_tokens: out,
 		}).eq('id', model.id);
@@ -687,6 +718,10 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 				<PriceInput label="Max output tokens" value={maxOut} onChange={setMaxOut} />
 				<PriceInput label="Quality score (0–5, stars)" value={quality} onChange={setQuality} />
 				<label className="mt-5 flex items-center gap-2 text-sm">
+					<input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} className="accent-cyan-500" />
+					<EyeOff size={13} className="text-cyan-400" /> Visible to users
+				</label>
+				<label className="flex items-center gap-2 text-sm">
 					<input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="accent-violet-500" />
 					<Star size={13} className="fill-violet-400 text-violet-400" /> Recommended card
 				</label>
@@ -698,10 +733,13 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 // ---------------- custom model modal ----------------
 function CustomModelModal({ onClose }: { onClose: () => void }) {
 	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null }>>([]);
+	const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 	const [parentId, setParentId] = useState('');
 	const [name, setName] = useState('');
 	const [newId, setNewId] = useState('');
 	const [prompt, setPrompt] = useState('');
+	const [categoryId, setCategoryId] = useState('');
+	const [visible, setVisible] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -714,8 +752,16 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 			.limit(500)
 			.then(({ data }) => {
 				setModels((data ?? []) as typeof models);
-				if (data && data.length) setParentId(data[0]!.id);
+				if (data && data.length) {
+					setParentId(data[0]!.id);
+					setCategoryId((data[0] as { category_id: string | null }).category_id ?? '');
+				}
 			});
+		void supabase
+			.from('model_categories')
+			.select('id,name')
+			.order('sort_order')
+			.then(({ data }) => setCategories((data ?? []) as Array<{ id: string; name: string }>));
 	}, []);
 
 	async function create() {
@@ -755,8 +801,8 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 			parent_model_id: base.id,
 			system_prompt: prompt.trim() || null,
 			vendor_slug: base.vendor_slug,
-			category_id: base.category_id,
-			enabled_for_users: false,
+			category_id: categoryId || base.category_id,
+			enabled_for_users: visible,
 			usage_multiplier: 1,
 		});
 		if (insErr) {
@@ -784,9 +830,28 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 			</p>
 			<label className="block text-xs">
 				<span className="text-muted-foreground">Base model</span>
-				<select value={parentId} onChange={(e) => setParentId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+				<select
+					value={parentId}
+					onChange={(e) => {
+						setParentId(e.target.value);
+						const base = models.find((m) => m.id === e.target.value);
+						if (base) setCategoryId(base.category_id ?? '');
+					}}
+					className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
+				>
 					{models.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
 				</select>
+			</label>
+			<label className="mt-3 block text-xs">
+				<span className="text-muted-foreground">Category (where it appears on /models)</span>
+				<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+					<option value="">— inherit from base model —</option>
+					{categories.map((c) => <option key={c.id} value={c.id}>{c.name.replace(/^vendor:/, '')}</option>)}
+				</select>
+			</label>
+			<label className="mt-3 flex items-center gap-2 text-sm">
+				<input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} className="accent-cyan-500" />
+				Visible to users immediately <span className="text-xs text-muted-foreground">(uncheck to create it hidden)</span>
 			</label>
 			<label className="mt-3 block text-xs">
 				<span className="text-muted-foreground">New display name</span>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, BadgePercent, Gauge, Layers, Wallet, Repeat } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, BadgePercent, Layers, Wallet, Repeat } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { NewSiteHeader, NewSiteFooter } from '../../design-system/new-chrome';
@@ -169,14 +169,14 @@ export default function ModelDetail() {
         <Reveal delay={160}>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-border bg-[var(--nx-surface)] p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{ar ? 'أداء مباشر' : 'Live stats'}</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{ar ? 'الاستخدام' : 'Usage'}</h3>
               <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 font-data text-sm text-cyan-300/90">
-                <span className="inline-flex items-center gap-1.5"><Gauge size={14} /> {model.tok_per_s ? `${Math.round(Number(model.tok_per_s))} tok/s` : '—'}</span>
-                <span className="inline-flex items-center gap-1.5"><Layers size={14} /> {model.avg_ttft_ms ? `${(Number(model.avg_ttft_ms) / 1000).toFixed(2)}s TTFT` : '—'}</span>
+                <span className="inline-flex items-center gap-1.5"><Layers size={14} /> {model.context_window ? compactTokens(model.context_window) : '—'}</span>
+                <span className="inline-flex items-center gap-1.5">{model.requests_30d ?? 0} {ar ? 'طلب / 30 يوم' : 'requests / 30d'}</span>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
                 {ar ? 'خطة التوكنز المرجّحة' : 'Weighted-token plan'}: <span className="font-data text-foreground">×{mult}</span>
-                {' · '}{ar ? 'طلبات 30 يوم' : '30d requests'}: <span className="font-data text-foreground">{model.requests_30d ?? 0}</span>
+                {mult === 0 && (ar ? ' (مجاني على الخطط)' : ' (free on plans)')}
               </p>
             </div>
 
