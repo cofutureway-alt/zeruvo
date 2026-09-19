@@ -117,11 +117,12 @@ export default function AdminModels() {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user) setEmail(user.email ?? '');
 		// page through everything — PostgREST caps single responses at 1000
-		// rows and the catalog is bigger than that once several providers sync
+		// rows and the catalog is bigger than that once several providers sync.
+		// admin view: security_invoker — RLS lets admins see hidden rows too
 		const all: unknown[] = [];
 		for (let from = 0; from < 20_000; from += 1000) {
 			const { data } = await supabase
-				.from('models_public_view')
+				.from('models_admin_view')
 				.select('*')
 				.order('display_name')
 				.range(from, from + 999);
