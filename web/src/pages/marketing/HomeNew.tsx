@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import {
-	ArrowRight, Check, Code, Gauge, Layers, Route as RouteIcon,
+	ArrowRight, Check, Code, Gauge, Gift, Layers, Route as RouteIcon,
 	Shield, Terminal, Zap, Search,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -95,6 +95,17 @@ export default function Home() {
 	const totalModels = models.length;
 	const catalogPreview = useMemo(() => models.slice(0, 8), [models]);
 	const dashboardTo = user ? '/dashboard' : '/signup';
+
+	// logged-in users with an available free-credit offer see the claim banner
+	const [hasOffer, setHasOffer] = useState(false);
+	useEffect(() => {
+		if (!user) { setHasOffer(false); return; }
+		void (async () => {
+			const { data } = await supabase.rpc('list_credit_offers');
+			const rows = (data ?? []) as Array<{ eligible: boolean; needs_topup: boolean }>;
+			setHasOffer(rows.some((o) => o.eligible || o.needs_topup));
+		})();
+	}, [user]);
 
 	return (
 		<div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -371,6 +382,30 @@ response = client.chat.completions.create(
 				{/* ============ CTA ============ */}
 				<section className="px-4 pb-24 sm:px-6 lg:px-8">
 					<div className="mx-auto max-w-7xl">
+						{hasOffer && (
+							<Reveal>
+								<Link
+									to="/dashboard/wallet"
+									className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-teal-500/40 bg-teal-500/10 px-6 py-5 transition-colors hover:bg-teal-500/15"
+								>
+									<span className="flex items-center gap-3">
+										<Gift className="h-5 w-5 shrink-0 text-teal-400" aria-hidden="true" />
+										<span>
+											<span className="block text-sm font-semibold">
+												{i18n.language === 'ar' ? 'لديك رصيد مجاني بانتظارك!' : 'You have free credit waiting!'}
+											</span>
+											<span className="block text-xs text-muted-foreground">
+												{i18n.language === 'ar' ? 'استلمه الآن من محفظتك واستخدمه على موديلات مختارة.' : 'Claim it from your wallet and spend it on selected models.'}
+											</span>
+										</span>
+									</span>
+									<span className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white">
+										{i18n.language === 'ar' ? 'استلام الرصيد' : 'Claim credit'}
+										<ArrowRight className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+									</span>
+								</Link>
+							</Reveal>
+						)}
 						<Reveal>
 							<Card className="border-border bg-card">
 								<CardContent className="flex flex-wrap items-center justify-between gap-6 p-10">

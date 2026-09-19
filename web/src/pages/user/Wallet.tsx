@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet as WalletIcon, Plus, Repeat, ArrowUpRight, ArrowDownLeft, ShieldCheck } from 'lucide-react';
+import { Wallet as WalletIcon, Plus, Repeat, ArrowUpRight, ArrowDownLeft, ShieldCheck, Gift, Lock, Check, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -9,6 +9,7 @@ import { PageHeader, KpiCard, Pill, EmptyState, Toggle } from '../../components/
 interface WalletRow {
 	balance_usd: number | string;
 	reserved_usd: number | string;
+	offer_balance_usd?: number | string;
 }
 interface TxRow {
 	id: number;
@@ -18,6 +19,19 @@ interface TxRow {
 	note: string | null;
 	created_at: string;
 }
+interface OfferInfo {
+	id: string;
+	name: string;
+	amount_usd: number | string;
+	models: { id: string; name: string }[];
+	require_topup_usd: number | string | null;
+	expires_days: number | null;
+	already_claimed: boolean;
+	remaining_usd: number | string | null;
+	claim_expires_at: string | null;
+	eligible: boolean;
+	needs_topup: boolean;
+}
 
 const TX_KINDS: Record<string, { label: string; tone: 'green' | 'red' | 'amber' | 'violet' | 'teal' }> = {
 	topup: { label: 'Top-up', tone: 'green' },
@@ -25,6 +39,8 @@ const TX_KINDS: Record<string, { label: string; tone: 'green' | 'red' | 'amber' 
 	refund: { label: 'Refund', tone: 'amber' },
 	admin_grant: { label: 'Admin grant', tone: 'violet' },
 	admin_deduct: { label: 'Admin deduct', tone: 'red' },
+	offer_grant: { label: 'Free credit', tone: 'teal' },
+	offer_expire: { label: 'Credit expired', tone: 'amber' },
 };
 
 export default function Wallet() {
@@ -41,6 +57,9 @@ export default function Wallet() {
 	const [iframeUrl, setIframeUrl] = useState<string | null>(null);
 	const [pref, setPref] = useState<'plan_first' | 'wallet_first'>('plan_first');
 	const [savingPref, setSavingPref] = useState(false);
+	const [offers, setOffers] = useState<OfferInfo[]>([]);
+	const [claiming, setClaiming] = useState<string | null>(null);
+	const [claimNote, setClaimNote] = useState<{ id: string; ok: boolean; text: string } | null>(null);
 
 	const min = settings?.wallet_min_topup_usd ?? 10;
 	const max = settings?.wallet_max_topup_usd ?? 200;
@@ -50,14 +69,16 @@ export default function Wallet() {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (!user) return;
 		setEmail(user.email ?? '');
-		const [w, t, p] = await Promise.all([
-			supabase.from('wallets').select('balance_usd,reserved_usd').eq('user_id', user.id).maybeSingle(),
+		const [w, t, p, of] = await Promise.all([
+			supabase.from('wallets').select('balance_usd,reserved_usd,offer_balance_usd').eq('user_id', user.id).maybeSingle(),
 			supabase.from('wallet_transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
 			supabase.from('profiles').select('billing_preference').eq('id', user.id).maybeSingle(),
+			supabase.rpc('list_credit_offers'),
 		]);
 		setWallet((w.data as WalletRow | null) ?? { balance_usd: 0, reserved_usd: 0 });
 		setTxs((t.data ?? []) as TxRow[]);
 		setPref(((p.data?.billing_preference as 'plan_first' | 'wallet_first') ?? 'plan_first'));
+		setOffers((of.data ?? []) as OfferInfo[]);
 	}, []);
 
 	useEffect(() => {
@@ -111,6 +132,39 @@ export default function Wallet() {
 
 	const balance = Number(wallet?.balance_usd ?? 0);
 	const reserved = Number(wallet?.reserved_usd ?? 0);
+	const offerBalance = Number(wallet?.offer_balance_usd ?? 0);
+
+	async function claim(offerId: string) {
+		setClaiming(offerId);
+		setClaimNote(null);
+		const { data, error } = await supabase.rpc('claim_credit_offer', { p_offer_id: offerId });
+		setClaiming(null);
+		const res = (data ?? null) as { ok: boolean; code?: string; granted_usd?: number; required_topup_usd?: number } | null;
+		if (error || !res) {
+			setClaimNote({ id: offerId, ok: false, text: error?.message ?? 'Claim failed — please try again.' });
+			return;
+		}
+		if (res.ok) {
+			setClaimNote({ id: offerId, ok: true, text: `$${Number(res.granted_usd ?? 0).toFixed(2)} free credit added — see the models it works on below.` });
+			await load();
+		} else if (res.code === 'NEEDS_TOPUP') {
+			setClaimNote({ id: offerId, ok: false, text: `Top up at least $${Number(res.required_topup_usd ?? 0).toFixed(2)} (lifetime) to unlock this offer, then claim it here.` });
+		} else if (res.code === 'ALREADY_CLAIMED') {
+			setClaimNote({ id: offerId, ok: false, text: 'You already claimed this offer.' });
+		} else if (res.code === 'NOT_ELIGIBLE') {
+			setClaimNote({ id: offerId, ok: false, text: 'This offer is not available for your account.' });
+		} else if (res.code === 'OFFER_EXHAUSTED') {
+			setClaimNote({ id: offerId, ok: false, text: 'All claims for this offer have been used.' });
+		} else {
+			setClaimNote({ id: offerId, ok: false, text: 'This offer is no longer available.' });
+		}
+	}
+
+	function fmtExpiry(v?: string | null) {
+		if (!v || v.startsWith('infinity')) return 'no expiry';
+		const d = new Date(v);
+		return isNaN(d.getTime()) ? 'no expiry' : `until ${d.toLocaleDateString()}`;
+	}
 
 	return (
 		<DashboardShell variant="user" email={email}>
@@ -130,12 +184,19 @@ export default function Wallet() {
 					}
 				/>
 
-				<div className="grid gap-4 sm:grid-cols-3">
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					<KpiCard
 						label="Available balance"
 						value={`$${balance.toFixed(4)}`}
 						sub={reserved > 0 ? `$${reserved.toFixed(4)} held for in-flight requests` : 'No active holds'}
 						icon={<WalletIcon size={15} />}
+					/>
+					<KpiCard
+						label="Free credit"
+						value={`$${offerBalance.toFixed(4)}`}
+						sub={offerBalance > 0 ? 'usable on its offer models only' : 'no active offers claimed'}
+						icon={<Gift size={15} />}
+						tone="teal"
 					/>
 					<KpiCard
 						label="Top-up bounds"
@@ -153,8 +214,78 @@ export default function Wallet() {
 					/>
 				</div>
 
+				{/* free credit offers */}
+				{offers.length > 0 && (
+					<section className="rounded-xl border border-teal-500/30 bg-teal-500/[0.04] p-5">
+						<h2 className="flex items-center gap-2 text-sm font-semibold">
+							<Gift size={16} className="text-teal-400" /> Free credit offers
+						</h2>
+						<div className="mt-3 space-y-3">
+							{offers.map((o) => {
+								const remaining = Number(o.remaining_usd ?? 0);
+								return (
+									<div key={o.id} className="rounded-xl border border-[var(--nx-border)] bg-[var(--nx-surface)] p-4">
+										<div className="flex flex-wrap items-start justify-between gap-3">
+											<div className="min-w-0">
+												<p className="flex items-center gap-2 text-sm font-semibold">
+													{o.name}
+													<span className="font-data text-teal-400">+${Number(o.amount_usd).toFixed(2)}</span>
+													{o.already_claimed && <Pill tone={remaining > 0 ? 'teal' : 'gray'}>{remaining > 0 ? `$${remaining.toFixed(2)} left` : 'used up'}</Pill>}
+												</p>
+												<p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-[var(--nx-muted)]">
+													<Lock size={11} /> works on:
+													{o.models.slice(0, 6).map((m) => (
+														<span key={m.id} className="rounded bg-zinc-500/10 px-1.5 py-0.5 font-data text-[11px]">{m.name}</span>
+													))}
+													{o.models.length > 6 && <span>+{o.models.length - 6} more</span>}
+													{o.already_claimed && (
+														<span className="ms-1 inline-flex items-center gap-1">
+															<Clock size={11} /> {fmtExpiry(o.claim_expires_at)}
+														</span>
+													)}
+												</p>
+											</div>
+											{o.already_claimed ? null : o.eligible ? (
+												<button
+													onClick={() => claim(o.id)}
+													disabled={claiming === o.id}
+													className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-500 disabled:opacity-40"
+												>
+													<Gift size={14} /> {claiming === o.id ? 'Claiming…' : `Claim $${Number(o.amount_usd).toFixed(2)}`}
+												</button>
+											) : o.needs_topup ? (
+												<button
+													onClick={() => {
+														setAmount(Math.max(min, Number(o.require_topup_usd ?? min)));
+														setCustom('');
+														setError(null);
+														document.getElementById('wallet-topup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+													}}
+													className="rounded-lg border border-teal-500/50 px-4 py-2 text-sm font-medium text-teal-300 hover:bg-teal-500/10"
+												>
+													Top up ${Number(o.require_topup_usd ?? min).toFixed(2)} to unlock
+												</button>
+											) : (
+												<span className="rounded-lg px-3 py-2 text-xs text-[var(--nx-muted)]">Not eligible yet</span>
+											)}
+										</div>
+										{claimNote?.id === o.id && (
+											<p className={`mt-2 flex items-center gap-1.5 text-xs ${claimNote.ok ? 'text-teal-400' : 'text-amber-400'}`}>
+												{claimNote.ok && <Check size={12} />} {claimNote.text}
+											</p>
+										)}
+									</div>
+								);
+							})}
+						</div>
+						<p className="mt-3 text-xs text-[var(--nx-muted)]">
+							Offer credit pays per-token for its listed models only. Your own balance and plans keep working everywhere.
+						</p>
+					</section>
+				)}
+
 				{/* top-up */}
-				<section className="rounded-xl border border-border bg-[var(--nx-surface)] p-5">
+				<section id="wallet-topup" className="rounded-xl border border-border bg-[var(--nx-surface)] p-5">
 					<h2 className="text-sm font-semibold">Top up</h2>
 					<div className="mt-3 flex flex-wrap gap-2">
 						{quick.map((v) => (

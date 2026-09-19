@@ -3,6 +3,7 @@ import { Plus, Trash2, Copy, Check, KeyRound, X, Search, ShieldCheck, Infinity a
 import { supabase } from '../../lib/supabase';
 import { DashboardShell } from '../../components/DashboardShell';
 import { Turnstile } from '../../components/Turnstile';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { PageHeader, Pill, EmptyState } from '../../components/console-kit';
 
@@ -121,10 +122,21 @@ export default function Keys() {
 		setBusy(false);
 	}
 
+	// delete-confirmation state
+	const [confirmKey, setConfirmKey] = useState<KeyRow | null>(null);
+	const [deleting, setDeleting] = useState(false);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
+
 	async function destroyKey(id: string) {
-		if (!window.confirm('Permanently delete this key? It stops working immediately and cannot be undone.')) return;
+		setDeleting(true);
+		setDeleteError(null);
 		const { ok, data } = await keysApi('DELETE', { key_id: id });
-		if (!ok) alert(data.error ?? 'Failed to delete');
+		setDeleting(false);
+		if (!ok) {
+			setDeleteError(data.error ?? 'Failed to delete — please try again.');
+			return;
+		}
+		setConfirmKey(null);
 		await load();
 	}
 
@@ -212,7 +224,7 @@ export default function Keys() {
 											<td className="px-4 py-3 font-data text-xs tabular-nums">${Number(k.total_spent_usd ?? 0).toFixed(4)}</td>
 											<td className="px-4 py-3 text-xs text-[var(--nx-muted)]">{k.created_at.slice(0, 10)}</td>
 											<td className="px-4 py-3 text-end">
-												<button onClick={() => destroyKey(k.id)} className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400" aria-label="Permanently delete">
+												<button onClick={() => { setDeleteError(null); setConfirmKey(k); }} className="rounded-lg p-2 text-[var(--nx-muted)] hover:bg-red-500/10 hover:text-red-400" aria-label="Permanently delete">
 													<Trash2 size={14} />
 												</button>
 											</td>
@@ -339,6 +351,17 @@ export default function Keys() {
 					</div>
 				</div>
 			)}
+
+			<ConfirmDialog
+				open={!!confirmKey}
+				title={`Delete "${confirmKey?.name ?? ''}"?`}
+				body="The key stops working immediately and is removed permanently — this cannot be undone."
+				error={deleteError}
+				busy={deleting}
+				confirmLabel="Delete key"
+				onConfirm={() => confirmKey && destroyKey(confirmKey.id)}
+				onCancel={() => setConfirmKey(null)}
+			/>
 		</DashboardShell>
 	);
 }

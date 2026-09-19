@@ -30,6 +30,7 @@ import Admin from './pages/admin/Admin';
 import Providers from './pages/admin/Providers';
 import AdminModels from './pages/admin/AdminModels';
 import RateLimits from './pages/admin/RateLimits';
+import CreditOffers from './pages/admin/CreditOffers';
 import AdminPlans from './pages/admin/AdminPlans';
 import Users from './pages/admin/Users';
 import Payments from './pages/admin/Payments';
@@ -206,6 +207,14 @@ function App() {
 						element={
 							<AdminRoute>
 								<RateLimits />
+							</AdminRoute>
+						}
+					/>
+					<Route
+						path="/admin/credit-offers"
+						element={
+							<AdminRoute>
+								<CreditOffers />
 							</AdminRoute>
 						}
 					/>

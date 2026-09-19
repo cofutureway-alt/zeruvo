@@ -101,6 +101,14 @@ export async function reserve(
 				message: 'This model is not in your plan and has no Pay-As-You-Go price.',
 			};
 		}
+		if (body.includes('OFFER_MODEL_RESTRICTED')) {
+			return {
+				ok: false,
+				status: 403,
+				code: 'offer_model_restricted',
+				message: 'Your free credit only works on its offer models. Subscribe to a plan or top up your wallet to use this model.',
+			};
+		}
 		if (body.includes('INSUFFICIENT_CREDITS')) {
 			return {
 				ok: false,

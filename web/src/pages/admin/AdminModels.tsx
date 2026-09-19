@@ -41,8 +41,8 @@ interface DiscountRow {
 	applies_to: string;
 	kind: string;
 	value: number | string;
-	valid_from: string;
-	valid_to: string;
+	valid_from: string | null;
+	valid_to: string | null;
 	active: boolean;
 }
 
@@ -345,7 +345,8 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 				).eq('id', model.id).maybeSingle(),
 				supabase.from('plans').select('id,name,active').order('price_usd'),
 				supabase.from('plan_models').select('plan_id').eq('model_id', model.id),
-				supabase.from('model_discounts').select('*').eq('model_id', model.id).eq('active', true).order('created_at', { ascending: false }).limit(1),
+				// latest discount even if inactive/expired, so the admin sees what was saved
+				supabase.from('model_discounts').select('*').eq('model_id', model.id).order('created_at', { ascending: false }).limit(1),
 				supabase.from('model_rate_limits').select('*').eq('model_id', model.id).maybeSingle(),
 			]);
 			const f = fresh.data;
@@ -361,7 +362,11 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 			setPlans((pl.data ?? []) as PlanRow[]);
 			setPlanIds(new Set((pm.data ?? []).map((r: { plan_id: string }) => r.plan_id)));
 			const d = (dl.data ?? [])[0] as DiscountRow | undefined;
-			if (d) setDisc({ ...d, valid_from: d.valid_from.slice(0, 10), valid_to: d.valid_to.slice(0, 10) });
+			if (d) setDisc({
+				...d,
+				valid_from: d.valid_from ? d.valid_from.slice(0, 10) : '',
+				valid_to: d.valid_to ? d.valid_to.slice(0, 10) : '',
+			});
 			if (rlq.data) setRl(rlq.data as RateLimitRow);
 		})();
 	}, [model.id]);
@@ -410,16 +415,18 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 			await supabase.from('plan_models').delete().eq('plan_id', plan_id).eq('model_id', model.id);
 		}
 
-		// discount: replace the model's active discounts with the edited one
-		await supabase.from('model_discounts').delete().eq('model_id', model.id).eq('active', true);
-		if (disc && Number(disc.value) > 0 && disc.valid_to) {
+		// discount: replace the model's active discounts with the edited one.
+		// valid_to may be null — empty expiry means "never expires".
+		const { error: delDiscErr } = await supabase.from('model_discounts').delete().eq('model_id', model.id).eq('active', true);
+		if (delDiscErr) { setError(delDiscErr.message); setBusy(false); return; }
+		if (disc && Number(disc.value) > 0) {
 			const { error: dErr } = await supabase.from('model_discounts').insert({
 				model_id: model.id,
 				applies_to: disc.applies_to,
 				kind: disc.kind,
 				value: Number(disc.value),
 				valid_from: disc.valid_from || new Date().toISOString().slice(0, 10),
-				valid_to: disc.valid_to,
+				valid_to: disc.valid_to || null,
 				active: true,
 			});
 			if (dErr) { setError(dErr.message); setBusy(false); return; }
@@ -551,6 +558,7 @@ function PricingModal({ model, onClose }: { model: AdminModelRow; onClose: () =>
 					<label className="text-xs">
 						<span className="text-muted-foreground">Expires (valid until)</span>
 						<input type="date" value={disc?.valid_to ?? ''} onChange={(e) => setDisc((d) => ({ ...(d ?? blankDisc(model.id)), valid_to: e.target.value }))} className="mt-1 w-full rounded-md border border-border bg-transparent px-2 py-1.5 font-data text-xs outline-none focus:border-cyan-500" />
+						<span className="mt-0.5 block text-[11px] text-muted-foreground">Empty = never expires</span>
 					</label>
 					<button onClick={() => setDisc(null)} className="mt-5 justify-self-start rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10">
 						Remove discount

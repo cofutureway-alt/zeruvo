@@ -22,6 +22,7 @@ import {
 	Server,
 	Gauge,
 	Activity,
+	Gift,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ThemeToggle } from '../design-system/theme-toggle';
@@ -48,6 +49,7 @@ const adminNav: NavItem[] = [
 	{ to: '/admin/providers', label: 'Providers', Icon: Server },
 	{ to: '/admin/models', label: 'Models & Pricing', Icon: Building2 },
 	{ to: '/admin/rate-limits', label: 'Rate Limits', Icon: Gauge },
+	{ to: '/admin/credit-offers', label: 'Free Credit Offers', Icon: Gift },
 	{ to: '/admin/plans', label: 'Plans', Icon: CreditCard },
 	{ to: '/admin/users', label: 'Users', Icon: Users },
 	{ to: '/admin/payments', label: 'Payments', Icon: Wallet },

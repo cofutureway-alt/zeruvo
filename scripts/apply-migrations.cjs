@@ -17,6 +17,8 @@ const todo = [
   '20260919020000_rate_limits.sql',
   '20260919030000_billing_engine.sql',
   '20260919040000_google_signup_guard.sql',
+  '20260919050000_pricing_ux_fixes.sql',
+  '20260919110000_credit_offers.sql',
 ];
 
 async function query(sql) {
