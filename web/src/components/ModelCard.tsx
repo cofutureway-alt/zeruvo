@@ -220,29 +220,28 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
         </div>
       )}
 
-      {/* price box: plan multiplier always visible + PAYG breakdown */}
-      {(hasPrices || mult !== 1) && (
-        <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
-          {mult !== 1 && (
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-sm text-muted-foreground">Plan</span>
-              <span className="font-data text-sm tabular-nums">
-                {mult === 0 ? (
-                  <span className="font-semibold text-emerald-400">Free on plans</span>
-                ) : (
-                  <>
-                    <span className={discount > 0 && hasPrices ? 'text-foreground' : 'font-medium text-foreground'}>×{mult}</span>
-                    <span className="ms-1 text-[10px] text-muted-foreground/70">weighted</span>
-                  </>
-                )}
-              </span>
-            </div>
-          )}
-          <PriceRow label="Input" effective={inP} discount={discount} free={inP != null && inP === 0} />
-          <PriceRow label="Output" effective={outP} discount={discount} free={outP != null && outP === 0} />
-          <PriceRow label="Cache read" effective={crP} discount={discount} free={crP != null && crP === 0} />
+      {/* price box: plan multiplier ALWAYS visible + PAYG breakdown */}
+      <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--console-elevated)]/40 px-3.5 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm text-muted-foreground">Plan</span>
+          <span className="font-data text-sm tabular-nums">
+            {mult === 0 ? (
+              <span className="font-semibold text-emerald-400">Free on plans</span>
+            ) : (
+              <>
+                <span className="font-medium text-foreground">×{mult}</span>
+                <span className="ms-1 text-[10px] text-muted-foreground/70">weighted</span>
+              </>
+            )}
+          </span>
         </div>
-      )}
+        <PriceRow label="Input" effective={inP} discount={discount} free={inP != null && inP === 0} />
+        <PriceRow label="Output" effective={outP} discount={discount} free={outP != null && outP === 0} />
+        <PriceRow label="Cache read" effective={crP} discount={discount} free={crP != null && crP === 0} />
+        {!hasPrices && (
+          <p className="pt-0.5 text-[11px] text-muted-foreground/70">Pay-As-You-Go not enabled for this model</p>
+        )}
+      </div>
 
       {/* stats: context + reasoning (live throughput lives in the admin table) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-data text-sm text-cyan-300/80">

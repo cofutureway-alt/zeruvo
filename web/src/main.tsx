@@ -25,6 +25,7 @@ import Plans from './pages/user/Plans';
 import Purchases from './pages/user/Purchases';
 import Settings from './pages/user/Settings';
 import Wallet from './pages/user/Wallet';
+import UserModels from './pages/user/UserModels';
 import Usage from './pages/user/Usage';
 import Admin from './pages/admin/Admin';
 import Providers from './pages/admin/Providers';
@@ -153,6 +154,16 @@ function App() {
 							<ProtectedRoute>
 								<PendingRoute>
 									<Settings />
+								</PendingRoute>
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/dashboard/models"
+						element={
+							<ProtectedRoute>
+								<PendingRoute>
+									<UserModels />
 								</PendingRoute>
 							</ProtectedRoute>
 						}

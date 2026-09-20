@@ -12,6 +12,7 @@ import { Reveal } from '../../design-system/reveal';
 import { CountUp } from '../../design-system/count-up';
 import { Marquee } from '../../design-system/marquee';
 import { ProviderMark } from '../../design-system/brand-marks';
+import { ModelCard, type ModelCardData } from '../../components/ModelCard';
 import { OrbitField } from '../../design-system/orbit-field';
 import { NetworkField } from '../../design-system/network-field';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../design-system/card';
@@ -22,15 +23,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
  *  - active providers (marquee)
  *  - stats strip (real catalog counts, no mock numbers)
  */
-
-interface ModelLite {
-	id: string;
-	upstream_model_id: string;
-	display_name: string;
-	slug: string;
-	usage_multiplier: number | string;
-	model_categories: { name: string } | null;
-}
 
 const features = [
 	{
@@ -71,24 +63,18 @@ const BRAND_NAMES = ['OpenAI', 'Anthropic', 'Google', 'DeepSeek', 'Moonshot AI',
 export default function Home() {
 	const { t, i18n } = useTranslation();
 	const { user } = useAuth();
-	const [models, setModels] = useState<ModelLite[]>([]);
+	const [models, setModels] = useState<ModelCardData[]>([]);
 
 	useEffect(() => {
 		void (async () => {
+			// same view the /models catalog uses — full pricing + vendor info
 			const { data } = await supabase
-				.from('models')
-				.select('id,upstream_model_id,display_name,slug,usage_multiplier,model_categories(name)')
-				.eq('enabled_for_users', true)
-				.order('upstream_model_id');
-			const rows = ((data ?? []) as Array<Record<string, unknown>>).map((m) => ({
-				id: String(m.id),
-				upstream_model_id: String(m.upstream_model_id),
-				display_name: String(m.display_name),
-				slug: String(m.slug),
-				usage_multiplier: Number(m.usage_multiplier ?? 1),
-				model_categories: (m.model_categories as { name: string } | null) ?? null,
-			}));
-			setModels(rows);
+				.from('models_public_view')
+				.select('id,slug,display_name,vendor_slug,vendor_name,context_window,payg_enabled,usage_multiplier,enabled_for_users,is_priced,is_featured,is_custom,input_modalities,output_modalities,supports_reasoning,input_price,output_price,cache_read_price,discount_percent,quality_score,tags')
+				.eq('is_priced', true)
+				.order('display_name')
+				.limit(8);
+			setModels((data ?? []) as unknown as ModelCardData[]);
 		})();
 	}, []);
 
@@ -299,23 +285,7 @@ export default function Home() {
 						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 							{catalogPreview.map((model, index) => (
 								<Reveal key={model.id} delay={index * 70} className="h-full">
-									<Link to={`/models/${model.slug}`} className="block h-full">
-										<Card className="hover-lift h-full border-border bg-card hover:border-primary/50">
-											<CardContent className="p-5">
-												<div className="flex items-start justify-between gap-2">
-													<p className="font-display font-semibold">{model.display_name}</p>
-													<span className="rounded bg-primary/15 px-2 py-1 text-xs font-medium text-primary">
-														×{Number(model.usage_multiplier) || 1}
-													</span>
-												</div>
-												<p className="mt-2 truncate font-mono text-xs text-muted-foreground">{model.upstream_model_id}</p>
-												<p className="mt-4 inline-flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-													<ProviderMark name={model.model_categories?.name ?? ''} className="h-4 w-4" />
-													{model.model_categories?.name ?? 'AI Models'}
-												</p>
-											</CardContent>
-										</Card>
-									</Link>
+									<ModelCard model={model} />
 								</Reveal>
 							))}
 							{catalogPreview.length === 0 && (

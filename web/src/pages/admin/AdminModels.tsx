@@ -670,14 +670,28 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 	const [visible, setVisible] = useState(model.enabled_for_users);
 	const [context, setContext] = useState(model.context_window?.toString() ?? '');
 	const [maxOut, setMaxOut] = useState<string>('');
+	const [categoryId, setCategoryId] = useState<string>('');
+	const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// max_output_tokens isn't in the view row — fetch it from the table
+	// max_output_tokens + current category aren't in the view row — fetch them
 	useEffect(() => {
-		void supabase.from('models').select('max_output_tokens').eq('id', model.id).maybeSingle()
-			.then(({ data }) => setMaxOut(data?.max_output_tokens != null ? String(data.max_output_tokens) : ''));
+		void supabase.from('models').select('max_output_tokens,category_id').eq('id', model.id).maybeSingle()
+			.then(({ data }) => {
+				setMaxOut(data?.max_output_tokens != null ? String(data.max_output_tokens) : '');
+				setCategoryId(data?.category_id ?? '');
+			});
 	}, [model.id]);
+
+	// category picker list
+	useEffect(() => {
+		void supabase
+			.from('model_categories')
+			.select('id,name')
+			.order('sort_order')
+			.then(({ data }) => setCategories((data ?? []) as Array<{ id: string; name: string }>));
+	}, []);
 
 	async function save() {
 		setBusy(true);
@@ -703,6 +717,7 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 			enabled_for_users: visible,
 			context_window: ctx,
 			max_output_tokens: out,
+			category_id: categoryId || null,
 		}).eq('id', model.id);
 		if (error) setError(error.message);
 		else onClose();
@@ -731,6 +746,13 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 				<PriceInput label="Context window (tokens)" value={context} onChange={setContext} />
 				<PriceInput label="Max output tokens" value={maxOut} onChange={setMaxOut} />
 				<PriceInput label="Quality score (0–5, stars)" value={quality} onChange={setQuality} />
+				<label className="block text-xs">
+					<span className="text-muted-foreground">Category (where it appears on /models)</span>
+					<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+						<option value="">— no category —</option>
+						{categories.map((c) => <option key={c.id} value={c.id}>{c.name.replace(/^vendor:/, '')}</option>)}
+					</select>
+				</label>
 				<label className="mt-5 flex items-center gap-2 text-sm">
 					<input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} className="accent-cyan-500" />
 					<EyeOff size={13} className="text-cyan-400" /> Visible to users

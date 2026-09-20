@@ -36,6 +36,7 @@ type NavItem = {
 
 const userNav: NavItem[] = [
 	{ to: '/dashboard', labelKey: 'overview', Icon: LayoutDashboard },
+	{ to: '/dashboard/models', label: 'Models', Icon: Boxes },
 	{ to: '/dashboard/keys', labelKey: 'apiKeys', Icon: KeyRound },
 	{ to: '/dashboard/logs', labelKey: 'logs', Icon: ScrollText },
 	{ to: '/dashboard/usage', label: 'Usage', Icon: Activity },
