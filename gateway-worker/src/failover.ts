@@ -93,6 +93,13 @@ const DEFAULT_HEADER_WAIT_LATER_MS = 60_000;
 /** cap on key attempts within the route (bounds worst-case header-wait) */
 const MAX_KEY_ATTEMPTS = 3;
 
+// Neutral client-facing failure texts — never reveal provider internals
+// (key rejections, credits, provider codes). Exact reasons live in trace.
+const MSG_UNAVAILABLE = 'This model is currently unavailable. Please try again later.';
+const MSG_BUSY = 'This model is currently busy. Please try again in a few minutes.';
+const MSG_SLOW = 'This model is taking too long to respond. Please try again.';
+const MSG_CUT = 'The model\'s response was interrupted. Please try again.';
+
 interface AttemptFailure {
 	kind: FinalErrorKind;
 	status: number;
@@ -220,7 +227,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 					apiKey = await opts.deps.decrypt(chosen);
 				} catch (e) {
 					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: decrypt failed (${(e as Error).name})`);
-					lastFailure = { kind: 'upstream_failed', status: 502, message: 'Key decryption failed' };
+					lastFailure = { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE };
 					continue;
 				}
 
@@ -247,9 +254,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 						: lastFailure?.kind ?? 'upstream_failed';
 			const message =
 				lastFailure?.message ??
-				(kind === 'no_provider_keys'
-					? 'Provider has no live keys'
-					: 'The provider failed on every available key. Retry shortly.');
+				MSG_UNAVAILABLE;
 			outcome.finalError = { kind, status: lastFailure?.status ?? 502, message };
 			pushTerminalError(kind, message);
 		}
@@ -311,41 +316,43 @@ export function startFailoverStream(opts: FailoverOptions): {
 				return { done: true, failure: null };
 			}
 			const failure: AttemptFailure = name === STALL_REASON
-				? { kind: 'upstream_failed', status: 504, message: `Provider stalled before first byte (>${Math.round(headerWaitMs / 1000)}s)` }
+				? { kind: 'upstream_failed', status: 504, message: MSG_SLOW }
 				: name === 'AbortError'
-					? { kind: 'upstream_failed', status: 504, message: 'Upstream aborted' }
-					: { kind: 'upstream_failed', status: 502, message: truncateMsg(name) };
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${failure.message}`);
+					? { kind: 'upstream_failed', status: 504, message: MSG_SLOW }
+					: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE };
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${name === STALL_REASON || name === 'AbortError' ? failure.message : truncateMsg(name)} (${failure.status})`);
 			return { done: false, failure };
 		}
 
-		// status classification (mirrors the old attempt loop, plus cross-route escape)
+		// status classification (mirrors the old attempt loop, plus cross-route escape).
+		// CLIENT-FACING POLICY: provider-health failures never reveal the provider's
+		// state (key rejections, credit, internal codes) — users get a neutral
+		// "model unavailable/busy" message; the exact reason stays in `trace`
+		// (server logs) for the admin.
 		if (res.status === 401 || res.status === 402 || res.status === 403) {
 			await opts.deps.markKeyDead(key.id).catch(() => undefined);
-			// relays frequently mislabel their own internal outages as 401/403 —
-			// surface whatever reason they actually returned
 			const hint = extractHint(await res.text().catch(() => ''));
-			const message = hint
-				? `Upstream rejected the request (${res.status}): ${hint}`
-				: `Upstream rejected key (${res.status})`;
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''} → key marked dead`);
-			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message, keyRejected: true } };
+			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message: MSG_UNAVAILABLE, keyRejected: true } };
 		}
 		if (res.status === 429) {
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited`);
-			return { done: false, failure: { kind: 'provider_rate_limited', status: 429, message: 'Upstream provider is rate-limited for this model. Retry shortly.' } };
+			return { done: false, failure: { kind: 'provider_rate_limited', status: 429, message: MSG_BUSY } };
 		}
 		if ([400, 404, 422].includes(res.status)) {
-			// client-shaped error: failover can't help — surface the provider text
+			// client-shaped error: failover can't help. Pass through only
+			// request-scoped provider text (context length, invalid params);
+			// anything provider-internal is masked.
 			const text = await res.text().catch(() => '');
-			outcome.finalError = { kind: 'client_request_error', status: res.status, message: truncateMsg(text) || `Upstream rejected the request (${res.status})` };
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: HTTP ${res.status} (client-shaped)`);
+			const safe = clientSafeReason(text);
+			outcome.finalError = { kind: 'client_request_error', status: res.status, message: safe ?? `The model rejected this request (${res.status}). Please review your request parameters.` };
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: HTTP ${res.status} (client-shaped)${safe ? '' : ` — ${truncateMsg(text)}`}`);
 			if (!outcome.clientGone) pushTerminalError('upstream_failed', outcome.finalError.message);
 			return { done: true, failure: null };
 		}
 		if (res.status >= 500) {
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: HTTP ${res.status}`);
-			return { done: false, failure: { kind: 'upstream_failed', status: 502, message: `Upstream returned ${res.status}` } };
+			return { done: false, failure: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE } };
 		}
 
 		// ---- headers OK (2xx): stream through the mode pump ----
@@ -368,22 +375,19 @@ export function startFailoverStream(opts: FailoverOptions): {
 				if (outcome.clientGone) return { done: true, failure: null };
 				const stalledAttempt = isStallAbort(abort.signal);
 				if (pump.abortedPreContent && !stalledAttempt) {
-					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: pre-content ${pump.sniffedError ? `embedded error (${pump.sniffedError.status})` : 'stream drop'}`);
-					return { done: false, failure: pump.sniffedError
-						? { kind: 'upstream_failed', status: 502, message: truncateMsg(pump.sniffedError.message) }
-						: { kind: 'upstream_failed', status: 502, message: 'Upstream dropped before first byte' } };
+					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: pre-content ${pump.sniffedError ? `embedded error (${pump.sniffedError.status}) ${truncateMsg(pump.sniffedError.message)}` : 'stream drop'}`);
+					return { done: false, failure: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE } };
 				}
 				if (pump.aborted || stalledAttempt || pump.abortedPreContent) {
 					if (outcome.streamedBytes === 0) {
 						// stalled right after headers, nothing delivered → switch
 						outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: stalled pre-content`);
-						return { done: false, failure: { kind: 'upstream_failed', status: 504, message: 'Upstream stalled before first byte' } };
+						return { done: false, failure: { kind: 'upstream_failed', status: 504, message: MSG_SLOW } };
 					}
 					// content already reached the client — be honest about truncation
 					outcome.timedOut = outcome.timedOut || stalledAttempt;
 					outcome.aborted = true;
-					pushTerminalError(stalledAttempt ? 'gateway_timeout' : 'upstream_disconnected',
-						stalledAttempt ? 'Upstream stalled mid-response' : 'Upstream connection dropped mid-response');
+					pushTerminalError(stalledAttempt ? 'gateway_timeout' : 'upstream_disconnected', MSG_CUT);
 					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: ${stalledAttempt ? 'stalled' : 'dropped'} mid-stream after content`);
 					return { done: true, failure: null };
 				}
@@ -399,10 +403,8 @@ export function startFailoverStream(opts: FailoverOptions): {
 				if (outcome.clientGone) return { done: true, failure: null };
 				const stalledAttempt = isStallAbort(abort.signal);
 				if (pump.abortedPreContent || stalledAttempt) {
-					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: pre-delivery ${stalledAttempt ? 'stall' : pump.sniffedError ? `embedded error (${pump.sniffedError.status})` : 'empty/aborted stream'}`);
-					return { done: false, failure: pump.sniffedError
-						? { kind: 'upstream_failed', status: 502, message: truncateMsg(pump.sniffedError.message) }
-						: { kind: stalledAttempt ? 'gateway_timeout' : 'upstream_failed', status: 504, message: 'Upstream failed to produce a complete answer' } };
+					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: pre-delivery ${stalledAttempt ? 'stall' : pump.sniffedError ? `embedded error (${pump.sniffedError.status}) ${truncateMsg(pump.sniffedError.message)}` : 'empty/aborted stream'}`);
+					return { done: false, failure: { kind: stalledAttempt ? 'gateway_timeout' : 'upstream_failed', status: 504, message: stalledAttempt ? MSG_SLOW : MSG_UNAVAILABLE } };
 				}
 				mergePump(pump);
 				if (!pushContent(pump.bodyText)) return { done: true, failure: null };
@@ -420,12 +422,12 @@ export function startFailoverStream(opts: FailoverOptions): {
 			}
 			if (bodyText.trim() === '') {
 				outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: empty buffer response`);
-				return { done: false, failure: { kind: 'upstream_failed', status: 502, message: 'Upstream returned an empty response' } };
+				return { done: false, failure: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE } };
 			}
 			const sniff = safeParseError(bodyText);
 			if (sniff) {
-				outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: buffer embedded error (${sniff.status})`);
-				return { done: false, failure: { kind: 'upstream_failed', status: 502, message: truncateMsg(sniff.message) } };
+				outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: buffer embedded error (${sniff.status}) ${truncateMsg(sniff.message)}`);
+				return { done: false, failure: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE } };
 			}
 			const usage = extractNonStreamUsage(bodyText, opts.clientWire);
 			outcome.usage = usage;
@@ -484,9 +486,8 @@ function safeParseError(bodyText: string): { status: number; message: string } |
 }
 
 /**
- * Pull a human-readable reason out of an auth-class error body. Relay error
- * shapes vary (flat JSON, {error:{...}}, plain text) — take the first
- * meaningful string we recognize.
+ * Pull a human-readable reason out of an auth-class error body for the
+ * SERVER trace. Never sent to clients.
  */
 function extractHint(text: string): string | null {
 	const t = text.trim();
@@ -502,6 +503,30 @@ function extractHint(text: string): string | null {
 		/* not JSON */
 	}
 	if (t.length < 200 && !t.startsWith('<')) return truncateMsg(t);
+	return null;
+}
+
+/**
+ * For client-shaped 4xx responses: pass the provider's text through ONLY
+ * when it describes the request itself (context length, invalid params,
+ * unknown model) and says nothing about provider internals (keys, quota,
+ * credits, provider codes). Otherwise null → the generic rejection text.
+ */
+function clientSafeReason(text: string): string | null {
+	const t = text.trim();
+	if (!t) return null;
+	let msg: string | null = null;
+	try {
+		const j = JSON.parse(t) as Record<string, unknown>;
+		const e = (j.error ?? j) as Record<string, unknown>;
+		const m = e.message ?? e.detail;
+		if (typeof m === 'string' && m) msg = m;
+	} catch {
+		msg = t.length < 200 && !t.startsWith('<') ? t : null;
+	}
+	if (!msg) return null;
+	if (/\b(provider|provider_code|api[ -]?key|apikey|quota|credit|balance|billing|subscription|unauthorized|forbidden|payment)\b/i.test(msg)) return null;
+	if (/\b(context|token|length|invalid|unsupported|not (found|exist|supported)|maximum|too (long|large)|parameter)/i.test(msg)) return truncateMsg(msg);
 	return null;
 }
 
