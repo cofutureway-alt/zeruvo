@@ -322,8 +322,14 @@ export function startFailoverStream(opts: FailoverOptions): {
 		// status classification (mirrors the old attempt loop, plus cross-route escape)
 		if (res.status === 401 || res.status === 402 || res.status === 403) {
 			await opts.deps.markKeyDead(key.id).catch(() => undefined);
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status} → key marked dead`);
-			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message: `Upstream rejected key (${res.status})`, keyRejected: true } };
+			// relays frequently mislabel their own internal outages as 401/403 —
+			// surface whatever reason they actually returned
+			const hint = extractHint(await res.text().catch(() => ''));
+			const message = hint
+				? `Upstream rejected the request (${res.status}): ${hint}`
+				: `Upstream rejected key (${res.status})`;
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''} → key marked dead`);
+			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message, keyRejected: true } };
 		}
 		if (res.status === 429) {
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited`);
@@ -474,6 +480,28 @@ function safeParseError(bodyText: string): { status: number; message: string } |
 	} catch {
 		/* not JSON */
 	}
+	return null;
+}
+
+/**
+ * Pull a human-readable reason out of an auth-class error body. Relay error
+ * shapes vary (flat JSON, {error:{...}}, plain text) — take the first
+ * meaningful string we recognize.
+ */
+function extractHint(text: string): string | null {
+	const t = text.trim();
+	if (!t) return null;
+	try {
+		const j = JSON.parse(t) as Record<string, unknown>;
+		const e = (j.error ?? j) as Record<string, unknown>;
+		for (const k of ['message', 'detail', 'provider_code', 'code', 'reason']) {
+			const v = e[k];
+			if (typeof v === 'string' && v) return truncateMsg(v);
+		}
+	} catch {
+		/* not JSON */
+	}
+	if (t.length < 200 && !t.startsWith('<')) return truncateMsg(t);
 	return null;
 }
 
