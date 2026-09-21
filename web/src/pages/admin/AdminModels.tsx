@@ -30,6 +30,9 @@ interface AdminModelRow {
 	is_featured: boolean;
 	is_custom: boolean;
 	vendor_slug: string | null;
+	provider_id: string | null;
+	provider_name: string | null;
+	provider_kind: string | null;
 	tok_per_s: number | null;
 	avg_ttft_ms: number | null;
 	discount_percent: number | null;
@@ -65,6 +68,17 @@ type Modal =
 	| { kind: 'pricing'; model: AdminModelRow }
 	| { kind: 'meta'; model: AdminModelRow }
 	| { kind: 'custom' };
+
+interface ProviderRow {
+	id: string;
+	display_name: string;
+	kind: string;
+}
+
+interface VendorRow {
+	slug: string;
+	display_name: string;
+}
 
 function ModalityDots({ mods }: { mods: string[] | null }) {
 	const icons = [
@@ -109,6 +123,8 @@ export default function AdminModels() {
 	const [status, setStatus] = useState('selected');
 	const [page, setPage] = useState(1);
 	const [modal, setModal] = useState<Modal | null>(null);
+	const [providers, setProviders] = useState<ProviderRow[]>([]);
+	const [provider, setProvider] = useState('any');
 	const [enriching, setEnriching] = useState(false);
 	const [enrichMsg, setEnrichMsg] = useState<string | null>(null);
 
@@ -131,6 +147,9 @@ export default function AdminModels() {
 			if (data.length < 1000) break;
 		}
 		setRows(all as unknown as AdminModelRow[]);
+		// gateway providers (connections) — separate from vendor_slug brands
+		const { data: provs } = await supabase.from('providers').select('id,display_name,kind').order('display_name');
+		setProviders((provs ?? []) as ProviderRow[]);
 		setLoading(false);
 	}, []);
 
@@ -162,6 +181,7 @@ export default function AdminModels() {
 		return rows.filter((r) => {
 			if (q && !r.display_name.toLowerCase().includes(q) && !r.upstream_model_id.toLowerCase().includes(q)) return false;
 			if (vendor !== 'any' && (r.vendor_slug ?? 'other') !== vendor) return false;
+			if (provider !== 'any' && (r.provider_id ?? 'none') !== provider) return false;
 			if (status === 'selected' && !r.enabled_for_users) return false;
 			if (status === 'priced' && !r.is_priced) return false;
 			if (status === 'unpriced' && (r.is_priced || !r.enabled_for_users)) return false;
@@ -169,12 +189,12 @@ export default function AdminModels() {
 			if (status === 'custom' && !r.is_custom) return false;
 			return true;
 		});
-	}, [rows, query, vendor, status]);
+	}, [rows, query, vendor, provider, status]);
 
 	// reset to the first page whenever the filters change
 	useEffect(() => {
 		setPage(1);
-	}, [query, vendor, status]);
+	}, [query, vendor, provider, status]);
 
 	const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 	const safePage = Math.min(page, pageCount);
@@ -230,6 +250,10 @@ export default function AdminModels() {
 						<option value="any">All vendors</option>
 						{vendors.map((v) => <option key={v} value={v}>{vendorLabel(v)}</option>)}
 					</select>
+					<select value={provider} onChange={(e) => setProvider(e.target.value)} className="h-9 rounded-lg border border-border bg-transparent px-3 text-sm outline-none focus:border-cyan-500">
+						<option value="any">All providers</option>
+						{providers.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+					</select>
 					<select value={status} onChange={(e) => setStatus(e.target.value)} className="h-9 rounded-lg border border-border bg-transparent px-3 text-sm outline-none focus:border-cyan-500">
 						<option value="selected">Selected models</option>
 						<option value="all">All synced models</option>
@@ -250,10 +274,11 @@ export default function AdminModels() {
 				) : (
 					<>
 					<div className="overflow-x-auto rounded-xl border border-[var(--nx-border)]">
-						<table className="w-full min-w-[1080px] text-sm">
+						<table className="w-full min-w-[1180px] text-sm">
 							<thead className="bg-zinc-900/60 font-data text-[11px] uppercase tracking-wider text-[var(--nx-muted)]">
 								<tr>
 									<th className="px-4 py-3 text-start">Model</th>
+									<th className="px-4 py-3 text-start">Provider</th>
 									<th className="px-4 py-3 text-start">Vendor</th>
 									<th className="px-4 py-3 text-start">Context</th>
 									<th className="px-4 py-3 text-start">Input $/M</th>
@@ -277,6 +302,11 @@ export default function AdminModels() {
 													<span className="max-w-56 truncate font-medium">{m.display_name}</span>
 												</div>
 												<p className="max-w-56 truncate font-data text-[10px] text-[var(--nx-muted)]">{m.upstream_model_id}</p>
+											</td>
+											<td className="px-4 py-3">
+												<span className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800/60 px-2 py-0.5 text-xs">
+													{m.provider_name ?? <span className="text-[var(--nx-muted)]">unassigned</span>}
+												</span>
 											</td>
 											<td className="px-4 py-3">
 												<span className="inline-flex items-center gap-1.5">
@@ -346,7 +376,7 @@ export default function AdminModels() {
 				<PricingModal model={modal.model} onClose={() => { setModal(null); void load(); }} />
 			)}
 			{modal?.kind === 'meta' && (
-				<MetaModal model={modal.model} onClose={() => { setModal(null); void load(); }} />
+				<MetaModal model={modal.model} providers={providers} onClose={() => { setModal(null); void load(); }} />
 			)}
 			{modal?.kind === 'custom' && (
 				<CustomModelModal onClose={() => { setModal(null); void load(); }} />
@@ -662,7 +692,7 @@ function NumInput({ label, value, onChange }: { label: string; value: number | n
 }
 
 // ---------------- metadata modal ----------------
-function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => void }) {
+function MetaModal({ model, providers, onClose }: { model: AdminModelRow; providers: ProviderRow[]; onClose: () => void }) {
 	const [name, setName] = useState(model.display_name);
 	const [description, setDescription] = useState(model.description ?? '');
 	const [quality, setQuality] = useState(model.quality_score?.toString() ?? '');
@@ -672,25 +702,35 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 	const [maxOut, setMaxOut] = useState<string>('');
 	const [categoryId, setCategoryId] = useState<string>('');
 	const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+	const [providerId, setProviderId] = useState(model.provider_id ?? '');
+	const [vendorSlug, setVendorSlug] = useState(model.vendor_slug ?? '');
+	const [vendors, setVendors] = useState<VendorRow[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	// max_output_tokens + current category aren't in the view row — fetch them
 	useEffect(() => {
-		void supabase.from('models').select('max_output_tokens,category_id').eq('id', model.id).maybeSingle()
+		void supabase.from('models').select('max_output_tokens,category_id,provider_id,vendor_slug').eq('id', model.id).maybeSingle()
 			.then(({ data }) => {
 				setMaxOut(data?.max_output_tokens != null ? String(data.max_output_tokens) : '');
 				setCategoryId(data?.category_id ?? '');
+				setProviderId((data as { provider_id: string | null } | null)?.provider_id ?? '');
+				setVendorSlug((data as { vendor_slug: string | null } | null)?.vendor_slug ?? '');
 			});
 	}, [model.id]);
 
-	// category picker list
+	// category picker list + vendor (brand) list
 	useEffect(() => {
 		void supabase
 			.from('model_categories')
 			.select('id,name')
 			.order('sort_order')
 			.then(({ data }) => setCategories((data ?? []) as Array<{ id: string; name: string }>));
+		void supabase
+			.from('ai_providers')
+			.select('slug,display_name')
+			.order('display_name')
+			.then(({ data }) => setVendors((data ?? []) as VendorRow[]));
 	}, []);
 
 	async function save() {
@@ -718,6 +758,8 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 			context_window: ctx,
 			max_output_tokens: out,
 			category_id: categoryId || null,
+			provider_id: providerId || null,
+			vendor_slug: vendorSlug || null,
 		}).eq('id', model.id);
 		if (error) setError(error.message);
 		else onClose();
@@ -747,6 +789,20 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 				<PriceInput label="Max output tokens" value={maxOut} onChange={setMaxOut} />
 				<PriceInput label="Quality score (0–5, stars)" value={quality} onChange={setQuality} />
 				<label className="block text-xs">
+					<span className="text-muted-foreground">Gateway provider (which connection serves this model)</span>
+					<select value={providerId} onChange={(e) => setProviderId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+						<option value="">— unassigned —</option>
+						{providers.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+					</select>
+				</label>
+				<label className="mt-3 block text-xs">
+					<span className="text-muted-foreground">Vendor / brand (card logo &amp; grouping)</span>
+					<select value={vendorSlug} onChange={(e) => setVendorSlug(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
+						<option value="">— none —</option>
+						{vendors.map((v) => <option key={v.slug} value={v.slug}>{v.display_name}</option>)}
+					</select>
+				</label>
+				<label className="block text-xs">
 					<span className="text-muted-foreground">Category (where it appears on /models)</span>
 					<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500">
 						<option value="">— no category —</option>
@@ -768,7 +824,8 @@ function MetaModal({ model, onClose }: { model: AdminModelRow; onClose: () => vo
 
 // ---------------- custom model modal ----------------
 function CustomModelModal({ onClose }: { onClose: () => void }) {
-	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null }>>([]);
+	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null; enabled_for_users: boolean }>>([]);
+	const [providers, setProviders] = useState<ProviderRow[]>([]);
 	const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 	const [parentId, setParentId] = useState('');
 	const [name, setName] = useState('');
@@ -779,20 +836,30 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	// every synced model can be a base — hidden ones included (admin RLS).
+	// fetch in chunks: PostgREST caps single responses at 1000 rows.
 	useEffect(() => {
-		void supabase
-			.from('models')
-			.select('id,display_name,upstream_model_id,provider_id,vendor_slug,category_id')
-			.eq('enabled_for_users', true)
-			.order('display_name')
-			.limit(500)
-			.then(({ data }) => {
-				setModels((data ?? []) as typeof models);
-				if (data && data.length) {
-					setParentId(data[0]!.id);
-					setCategoryId((data[0] as { category_id: string | null }).category_id ?? '');
-				}
-			});
+		void (async () => {
+			const all: unknown[] = [];
+			for (let from = 0; from < 20_000; from += 1000) {
+				const { data } = await supabase
+				.from('models')
+					.select('id,display_name,upstream_model_id,provider_id,vendor_slug,category_id,enabled_for_users')
+					.order('display_name')
+					.range(from, from + 999);
+				if (!data?.length) break;
+				all.push(...data);
+				if (data.length < 1000) break;
+			}
+			setModels(all as typeof models);
+			if (all.length) {
+				const first = all[0] as { id: string; category_id: string | null };
+				setParentId(first.id);
+				setCategoryId(first.category_id ?? '');
+			}
+		})();
+		void supabase.from('providers').select('id,display_name,kind').order('display_name')
+			.then(({ data }) => setProviders((data ?? []) as ProviderRow[]));
 		void supabase
 			.from('model_categories')
 			.select('id,name')
@@ -875,7 +942,13 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 					}}
 					className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-cyan-500"
 				>
-					{models.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+					{models.map((m) => (
+						<option key={m.id} value={m.id}>
+							{m.display_name}
+							{m.provider_id && ` — ${providers.find((p) => p.id === m.provider_id)?.display_name ?? 'provider'}`}
+							{!m.enabled_for_users && ' (hidden)'}
+						</option>
+					))}
 				</select>
 			</label>
 			<label className="mt-3 block text-xs">

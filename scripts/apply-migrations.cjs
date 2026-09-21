@@ -21,6 +21,7 @@ const todo = [
   '20260919110000_credit_offers.sql',
   '20260919120000_audit_fixes.sql',
   '20260919130000_catalog_visibility.sql',
+  '20260921000000_admin_provider_columns.sql',
 ];
 
 async function query(sql) {
