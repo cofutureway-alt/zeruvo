@@ -47,6 +47,8 @@ interface ResolvedModel {
   provider_base_url: string;
   /** id actually sent upstream — custom models route via their parent */
   upstream_id: string;
+  /** models.id of the REAL model behind a custom alias (null for normal models) */
+  parent_model_id: string | null;
   usage_multiplier: string;
   context_window: number | null;
   enabled: boolean;
@@ -261,14 +263,17 @@ async function handleChat(
   }
   const upstreamModel = resolved.upstream_id;
 
-  // plan/model gating
+  // plan/model gating — custom (alias) models are gated by their PARENT:
+  // the plan includes the real model (GLM-5.3-Flash), not the fake name.
+  // A plan may also list the alias row itself; either passes.
   const allowed = auth.ctx.allowed_models ?? [];
-  if (allowed.length && !allowed.includes(resolved.model_id)) {
+  const gateId = resolved.parent_model_id ?? resolved.model_id;
+  if (allowed.length && !allowed.includes(gateId) && !allowed.includes(resolved.model_id)) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_in_plan', model_id: resolved.model_id, upstream_model: upstreamModel });
     return json({ error: { type: 'model_not_in_plan', message: 'Model not included in your plan' } }, 403);
   }
   const keyAllowed = auth.ctx.api_allowed_models ?? [];
-  if (keyAllowed.length && !keyAllowed.includes(resolved.model_id)) {
+  if (keyAllowed.length && !keyAllowed.includes(gateId) && !keyAllowed.includes(resolved.model_id)) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_allowed_for_key', model_id: resolved.model_id, upstream_model: upstreamModel });
     return json({ error: { type: 'model_not_allowed_for_key', message: 'Key may not call this model' } }, 403);
   }
@@ -523,6 +528,7 @@ async function listModels(request: Request): Promise<Response> {
   const enabled = await postgrestQuery<Array<{
     id: string;
     upstream_model_id: string;
+    parent_model_id: string | null;
     context_window: number | null;
     display_name: string;
     vendor_slug: string | null;
@@ -534,13 +540,14 @@ async function listModels(request: Request): Promise<Response> {
     supports_reasoning: boolean;
   }>>(
     'models?enabled_for_users=eq.true'
-    + '&select=id,upstream_model_id,context_window,display_name,vendor_slug,payg_enabled,input_price_per_m,output_price_per_m,input_modalities,output_modalities,supports_reasoning',
+    + '&select=id,upstream_model_id,parent_model_id,context_window,display_name,vendor_slug,payg_enabled,input_price_per_m,output_price_per_m,input_modalities,output_modalities,supports_reasoning',
   );
   // plan gating: allowed_models is the plan's model list; empty = no
-  // restriction, so every enabled model is listed.
+  // restriction, so every enabled model is listed. Custom aliases list
+  // under their public name but are entitled by their parent model.
   const allowed = auth.ctx.allowed_models ?? [];
   const data = (enabled ?? [])
-    .filter((m) => !allowed.length || allowed.includes(m.id))
+    .filter((m) => !allowed.length || allowed.includes(m.id) || (m.parent_model_id && allowed.includes(m.parent_model_id)))
     .map((m) => ({
       id: m.upstream_model_id,
       object: 'model',

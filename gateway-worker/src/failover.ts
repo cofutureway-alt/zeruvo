@@ -330,10 +330,18 @@ export function startFailoverStream(opts: FailoverOptions): {
 		// "model unavailable/busy" message; the exact reason stays in `trace`
 		// (server logs) for the admin.
 		if (res.status === 401 || res.status === 402 || res.status === 403) {
-			await opts.deps.markKeyDead(key.id).catch(() => undefined);
-			const hint = extractHint(await res.text().catch(() => ''));
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''} → key marked dead`);
-			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message: MSG_UNAVAILABLE, keyRejected: true } };
+			const bodyText = await res.text().catch(() => '');
+			const hint = extractHint(bodyText);
+			// Relays mislabel their own internal outages as 401/403 — only kill a
+			// key when the body actually blames the credential. A non-auth body
+			// (or an empty one that later succeeds) must NOT lock the provider
+			// out for the dead window.
+			const genuine = isGenuineAuthRejection(bodyText);
+			if (genuine) {
+				await opts.deps.markKeyDead(key.id).catch(() => undefined);
+			}
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''}${genuine ? ' → key marked dead' : ' (not a genuine auth rejection — key kept live)'}`);
+			return { done: false, failure: { kind: genuine ? 'provider_keys_rejected' : 'upstream_failed', status: res.status, message: MSG_UNAVAILABLE, keyRejected: genuine } };
 		}
 		if (res.status === 429) {
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited`);
@@ -504,6 +512,25 @@ function extractHint(text: string): string | null {
 	}
 	if (t.length < 200 && !t.startsWith('<')) return truncateMsg(t);
 	return null;
+}
+
+/**
+ * Decide whether an auth-class (401/402/403) response really blames the
+ * credential. Empty bodies and relay-internal codes (PROVIDER_BUSINESS_ERROR,
+ * mislabeled outages) must NOT lock a key out for the dead window.
+ */
+function isGenuineAuthRejection(bodyText: string): boolean {
+	const t = bodyText.trim().toLowerCase();
+	if (t === '') return true;
+	// genuine credential blame: invalid/expired/missing key or token
+	if (/(invalid|expired|revoked|incorrect|bad|missing|malformed|unauthorized|not[ -]?(valid|authenticated))[^."]{0,40}(api[ -]?key|key|token|credential|authorization)/.test(t)
+		|| /\b(api[ -]?key|token|credential)[^a-z]*(is |are )?(invalid|expired|revoked|missing|incorrect|denied)/.test(t)
+		|| t.includes('invalid api key') || t.includes('invalid token')
+		|| t.includes('authentication failed') || t.includes('authentication required')
+		|| t.includes('check your api key') || t.includes('invalid_api_key')) {
+		return true;
+	}
+	return false;
 }
 
 /**

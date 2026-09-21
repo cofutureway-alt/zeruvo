@@ -22,6 +22,8 @@ const todo = [
   '20260919120000_audit_fixes.sql',
   '20260919130000_catalog_visibility.sql',
   '20260921000000_admin_provider_columns.sql',
+  '20260921140000_resolve_alias_parent_id.sql',
+  '20260921150000_alias_aware_billing.sql',
 ];
 
 async function query(sql) {
