@@ -23,7 +23,6 @@ import {
   importDek,
   decryptProviderKey,
   loadProviderKeys,
-  markDead,
   type ProviderKeyRow,
 } from './keys';
 import type { Wire } from './stream';
@@ -334,7 +333,6 @@ async function handleChat(
       forwardToProvider(envNow(), clientWire, r, neutral, rawBody, apiKey, forceStream, signal),
     loadKeys: async (r) => loadProviderKeys(r.provider_id).catch(() => [] as ProviderKeyRow[]),
     decrypt: (key) => decryptProviderKey(dek, key.encrypted_key),
-    markKeyDead: (keyId) => markDead(keyId, 5),
   };
 
   const isStream = clientWire === 'gemini' ? !!geminiWantsStream : neutral.stream;

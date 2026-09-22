@@ -15,9 +15,12 @@
  * KEYS (the admin decides which providers serve a model — the gateway never
  * escapes to an unenabled provider). A key attempt is retried on another
  * key when it stalls (header deadline), 429s, 5xx's, drops the connection
- * or embeds an error BEFORE any content byte reached the client; auth
- * failures additionally mark the key dead. After content flows, switching
- * is impossible — we end the stream honestly with an error frame instead.
+ * or embeds an error BEFORE any content byte reached the client. After
+ * content flows, switching is impossible — we end the stream honestly with
+ * an error frame instead.
+ *
+ * NOTE: keys are NEVER taken out of rotation (no dead-key quarantine) —
+ * every attempt picks fresh from the provider's full key set.
  *
  * Settle happens exactly once, in the caller, off the outcome.
  */
@@ -55,7 +58,6 @@ export interface FailoverDeps {
 	): Promise<Response>;
 	loadKeys(route: RouteRow): Promise<ProviderKeyRow[]>;
 	decrypt(key: ProviderKeyRow): Promise<string>;
-	markKeyDead(keyId: string): Promise<void>;
 }
 
 export type FinalErrorKind =
@@ -104,7 +106,7 @@ interface AttemptFailure {
 	kind: FinalErrorKind;
 	status: number;
 	message: string;
-	/** auth-class failure — key marked dead, another key of same route was tried */
+	/** auth-class failure (401/402/403) — another key of the route was tried */
 	keyRejected?: boolean;
 }
 
@@ -198,20 +200,18 @@ export function startFailoverStream(opts: FailoverOptions): {
 		let sawNoKeys = false;
 		let attemptIndex = 0;
 
-		// Single route (the provider the admin enabled for this model);
-		// resilience comes from rotating across its live KEYS. Cross-provider
-		// escape is a catalog decision (which provider is enabled), never a
-		// runtime one.
-		const route = opts.route;
-		if (!outcome.clientGone) {
-			const keys = await opts.deps.loadKeys(route).catch(() => [] as ProviderKeyRow[]);
-			const tried = new Set<string>();
-			for (let guard = 0; guard < MAX_KEY_ATTEMPTS; guard++) {
-				if (outcome.clientGone) return;
-				const candidates = keys.filter(
-					(k) => !tried.has(k.id) && (!k.dead_until || new Date(k.dead_until).getTime() <= Date.now()),
-				);
-				const chosen = pickWeighted(candidates);
+			// Single route (the provider the admin enabled for this model);
+			// resilience comes from rotating across its KEYS. Cross-provider
+			// escape is a catalog decision (which provider is enabled), never a
+			// runtime one.
+			const route = opts.route;
+			if (!outcome.clientGone) {
+				const keys = await opts.deps.loadKeys(route).catch(() => [] as ProviderKeyRow[]);
+				const tried = new Set<string>();
+				for (let guard = 0; guard < MAX_KEY_ATTEMPTS; guard++) {
+					if (outcome.clientGone) return;
+					const candidates = keys.filter((k) => !tried.has(k.id));
+					const chosen = pickWeighted(candidates);
 				if (!chosen) {
 					if (tried.size === 0) {
 						sawNoKeys = true;
@@ -237,8 +237,7 @@ export function startFailoverStream(opts: FailoverOptions): {
 				if (result.failure?.keyRejected) sawKeysRejected = true;
 				if (result.failure?.kind === 'provider_rate_limited') sawRateLimit = true;
 				lastFailure = result.failure;
-				// pre-content failure → rotate to the next live key (auth failures
-				// already marked the key dead by deps.markKeyDead)
+				// pre-content failure → rotate to the next key
 			}
 		}
 
@@ -332,16 +331,12 @@ export function startFailoverStream(opts: FailoverOptions): {
 		if (res.status === 401 || res.status === 402 || res.status === 403) {
 			const bodyText = await res.text().catch(() => '');
 			const hint = extractHint(bodyText);
-			// Relays mislabel their own internal outages as 401/403 — only kill a
-			// key when the body actually blames the credential. A non-auth body
-			// (or an empty one that later succeeds) must NOT lock the provider
-			// out for the dead window.
-			const genuine = isGenuineAuthRejection(bodyText);
-			if (genuine) {
-				await opts.deps.markKeyDead(key.id).catch(() => undefined);
-			}
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''}${genuine ? ' → key marked dead' : ' (not a genuine auth rejection — key kept live)'}`);
-			return { done: false, failure: { kind: genuine ? 'provider_keys_rejected' : 'upstream_failed', status: res.status, message: MSG_UNAVAILABLE, keyRejected: genuine } };
+			// Auth-class failures rotate to another key but never remove one
+			// from rotation: relays routinely mislabel their own internal
+			// outages as 401/403, and quarantine would turn a blip into an
+			// outage. The raw reason (if any) is kept in the trace for admins.
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: ${res.status}${hint ? ` — ${hint}` : ''}`);
+			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message: MSG_UNAVAILABLE, keyRejected: true } };
 		}
 		if (res.status === 429) {
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited`);
@@ -512,25 +507,6 @@ function extractHint(text: string): string | null {
 	}
 	if (t.length < 200 && !t.startsWith('<')) return truncateMsg(t);
 	return null;
-}
-
-/**
- * Decide whether an auth-class (401/402/403) response really blames the
- * credential. Empty bodies and relay-internal codes (PROVIDER_BUSINESS_ERROR,
- * mislabeled outages) must NOT lock a key out for the dead window.
- */
-function isGenuineAuthRejection(bodyText: string): boolean {
-	const t = bodyText.trim().toLowerCase();
-	if (t === '') return true;
-	// genuine credential blame: invalid/expired/missing key or token
-	if (/(invalid|expired|revoked|incorrect|bad|missing|malformed|unauthorized|not[ -]?(valid|authenticated))[^."]{0,40}(api[ -]?key|key|token|credential|authorization)/.test(t)
-		|| /\b(api[ -]?key|token|credential)[^a-z]*(is |are )?(invalid|expired|revoked|missing|incorrect|denied)/.test(t)
-		|| t.includes('invalid api key') || t.includes('invalid token')
-		|| t.includes('authentication failed') || t.includes('authentication required')
-		|| t.includes('check your api key') || t.includes('invalid_api_key')) {
-		return true;
-	}
-	return false;
 }
 
 /**

@@ -25,6 +25,7 @@ const todo = [
   '20260921140000_resolve_alias_parent_id.sql',
   '20260921150000_alias_aware_billing.sql',
   '20260921160000_alias_wallet_catalog.sql',
+  '20260922000000_retire_dead_key_quarantine.sql',
 ];
 
 async function query(sql) {

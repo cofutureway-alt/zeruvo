@@ -172,18 +172,14 @@ if (req.method === 'OPTIONS') {
 	if (!provider) return Response.json({ error: 'provider not found' }, { status: 404, headers: CORS_HEADERS })
 
 	const { data: keys } = await admin.from('provider_keys')
-		.select('id,encrypted_key,dead_until,label')
+		.select('id,encrypted_key,label')
 		.eq('provider_id', body.provider_id);
 
-	// probe every key; keep the first live one for the catalog pull
+	// probe every key; keep the first decryptable one for the catalog pull
 	const keyResults: Array<{ label: string; ok: boolean; detail: string }> = [];
 	let apiKey: string | null = null;
 	for (const k of keys ?? []) {
 		if (apiKey) break;
-		if (k.dead_until && new Date(k.dead_until) > new Date()) {
-			keyResults.push({ label: k.label, ok: false, detail: 'marked dead' });
-			continue;
-		}
 		try {
 			apiKey = await decrypt(k.encrypted_key, Deno.env.get('NEXOR_ENCRYPTION_KEY')!);
 			keyResults.push({ label: k.label, ok: true, detail: 'loaded' });

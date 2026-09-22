@@ -115,7 +115,7 @@ if (req.method === 'OPTIONS') {
 						encrypted_key: encrypted,
 						weight: Number(body.weight ?? 1),
 					})
-					.select('id,provider_id,label,weight,dead_until,last_error_code,created_at').single();
+					.select('id,provider_id,label,weight,created_at').single();
 				if (error) return Response.json({ error: error.message }, { status: 500, headers: CORS_HEADERS })
 				await audit('add_key', data.id, { provider_id: body.provider_id });
 				return Response.json({ key: data }, { headers: CORS_HEADERS })
@@ -148,26 +148,19 @@ if (req.method === 'OPTIONS') {
 						? { Authorization: `Bearer ${apiKey}`, 'HTTP-Referer': 'https://zeruvo.online' }
 						: { Authorization: `Bearer ${apiKey}` };
 
-				const t0 = Date.now();
-				const res = await fetch(`${base}/models`, { headers });
-				const latency = Date.now() - t0;
+					const t0 = Date.now();
+					const res = await fetch(`${base}/models`, { headers });
+					const latency = Date.now() - t0;
 
-				let modelCount = 0;
-				let detail = res.ok ? 'ok' : `HTTP ${res.status}`;
-				if (res.ok) {
-					try {
-						const j = await res.json();
-						modelCount = Array.isArray(j.data) ? j.data.length : 0;
-					} catch { /* non-json ok */ }
-					// clear dead marker on success
-					await admin.from('provider_keys').update({ dead_until: null, last_error_code: null }).eq('id', row.id);
-				} else if ([401, 402, 403].includes(res.status)) {
-					await admin.from('provider_keys').update({
-						dead_until: new Date(Date.now() + 30 * 60_000).toISOString(),
-						last_error_code: res.status,
-					}).eq('id', row.id);
-				}
-				await audit('test_key', row.id, { status: res.status });
+					let modelCount = 0;
+					let detail = res.ok ? 'ok' : `HTTP ${res.status}`;
+					if (res.ok) {
+						try {
+							const j = await res.json();
+							modelCount = Array.isArray(j.data) ? j.data.length : 0;
+						} catch { /* non-json ok */ }
+					}
+					await audit('test_key', row.id, { status: res.status });
 				return Response.json({ ok: res.ok, status: res.status, latency_ms: latency, model_count: modelCount, detail }, { headers: CORS_HEADERS })
 			}
 			default:

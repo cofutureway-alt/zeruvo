@@ -23,8 +23,6 @@ interface KeyRow {
 	id: string;
 	label: string;
 	weight: number | string;
-	dead_until: string | null;
-	last_error_code: number | null;
 }
 
 type TestResult = Record<string, { ok: boolean; detail: string; latency_ms?: number; model_count?: number }>;
@@ -285,7 +283,7 @@ function KeysManagerModal({ provider, onClose }: { provider: ProviderRow; onClos
 	async function load() {
 		const { data } = await supabase
 			.from('provider_keys')
-			.select('id,label,weight,dead_until,last_error_code')
+			.select('id,label,weight')
 			.eq('provider_id', provider.id)
 			.order('created_at');
 		setKeys((data ?? []) as KeyRow[]);
@@ -347,12 +345,10 @@ function KeysManagerModal({ provider, onClose }: { provider: ProviderRow; onClos
 					<ul className="space-y-2">
 						{keys.map((k, i) => {
 							const t = results[k.id];
-							const dead = k.dead_until && new Date(k.dead_until) > new Date();
 							return (
 								<li key={k.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--nx-border)] px-4 py-3">
 									<span className="font-data text-xs text-zinc-300">{k.label}</span>
 									<span className="font-data text-[11px] tabular-nums text-[var(--nx-muted)]">w:{Number(k.weight)}</span>
-									{dead && <span className="rounded-full bg-red-500/10 px-2 py-0.5 font-data text-[10px] text-red-400">dead until {new Date(k.dead_until!).toLocaleTimeString()}</span>}
 									{t && (
 										t.ok ? (
 											<span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-400">
@@ -380,7 +376,7 @@ function KeysManagerModal({ provider, onClose }: { provider: ProviderRow; onClos
 					</ul>
 				)}
 				<p className="text-[11px] leading-relaxed text-[var(--nx-muted)]">
-					Weights bias traffic when multiple live keys exist. The gateway auto-marks keys dead on 401/402/403 and rotates on 429.
+					Weights bias traffic when multiple keys exist. The gateway rotates across all keys and never takes one out of rotation.
 				</p>
 			</div>
 		</Modal>
