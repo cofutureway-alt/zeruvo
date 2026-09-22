@@ -263,12 +263,15 @@ async function handleChat(
   }
   const upstreamModel = resolved.upstream_id;
 
-  // plan/model gating — custom (alias) models are gated by their PARENT:
-  // the plan includes the real model (GLM-5.3-Flash), not the fake name.
-  // A plan may also list the alias row itself; either passes.
+  // plan/model gating — a custom ALIAS model is NOT gated by the plan list
+  // here: entitlement (plan membership if any, otherwise PAYG from the
+  // wallet) is decided atomically by reserve_request, so a wallet-only
+  // alias isn't rejected with model_not_in_plan before the billing path.
+  // Normal (non-alias) models keep the plan gate.
   const allowed = auth.ctx.allowed_models ?? [];
+  const isAlias = resolved.parent_model_id != null;
   const gateId = resolved.parent_model_id ?? resolved.model_id;
-  if (allowed.length && !allowed.includes(gateId) && !allowed.includes(resolved.model_id)) {
+  if (!isAlias && allowed.length && !allowed.includes(resolved.model_id)) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_in_plan', model_id: resolved.model_id, upstream_model: upstreamModel });
     return json({ error: { type: 'model_not_in_plan', message: 'Model not included in your plan' } }, 403);
   }
@@ -544,10 +547,12 @@ async function listModels(request: Request): Promise<Response> {
   );
   // plan gating: allowed_models is the plan's model list; empty = no
   // restriction, so every enabled model is listed. Custom aliases list
-  // under their public name but are entitled by their parent model.
+  // under their public name when their parent is in the plan OR when they
+  // are wallet-billable (PAYG) — the latter are sold from the wallet, not
+  // a plan, and must still be discoverable by clients.
   const allowed = auth.ctx.allowed_models ?? [];
   const data = (enabled ?? [])
-    .filter((m) => !allowed.length || allowed.includes(m.id) || (m.parent_model_id && allowed.includes(m.parent_model_id)))
+    .filter((m) => !allowed.length || allowed.includes(m.id) || (m.parent_model_id && (allowed.includes(m.parent_model_id) || m.payg_enabled)))
     .map((m) => ({
       id: m.upstream_model_id,
       object: 'model',

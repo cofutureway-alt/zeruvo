@@ -824,7 +824,7 @@ function MetaModal({ model, providers, onClose }: { model: AdminModelRow; provid
 
 // ---------------- custom model modal ----------------
 function CustomModelModal({ onClose }: { onClose: () => void }) {
-	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null; enabled_for_users: boolean }>>([]);
+	const [models, setModels] = useState<Array<{ id: string; display_name: string; upstream_model_id: string; provider_id: string; vendor_slug: string | null; category_id: string | null; enabled_for_users: boolean; is_custom: boolean }>>([]);
 	const [providers, setProviders] = useState<ProviderRow[]>([]);
 	const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 	const [parentId, setParentId] = useState('');
@@ -843,8 +843,9 @@ function CustomModelModal({ onClose }: { onClose: () => void }) {
 			const all: unknown[] = [];
 			for (let from = 0; from < 20_000; from += 1000) {
 				const { data } = await supabase
-				.from('models')
-					.select('id,display_name,upstream_model_id,provider_id,vendor_slug,category_id,enabled_for_users')
+					.from('models')
+					.select('id,display_name,upstream_model_id,provider_id,vendor_slug,category_id,enabled_for_users,is_custom')
+					.eq('is_custom', false)
 					.order('display_name')
 					.range(from, from + 999);
 				if (!data?.length) break;
