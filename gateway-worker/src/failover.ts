@@ -19,6 +19,14 @@
  * content flows, switching is impossible — we end the stream honestly with
  * an error frame instead.
  *
+ * DECISION GATE (agent retries): fast outcomes — an upstream 429/5xx/auth
+ * failure on every key, a client-shaped 4xx, or the first 2xx headers —
+ * are settled within a short grace window BEFORE the client Response is
+ * constructed, so the gateway can return a REAL HTTP status (429/503 with
+ * Retry-After) that OpenAI/Anthropic SDKs and agent loops retry. Only a
+ * provider that is still silent when the grace expires falls back to the
+ * durable heartbeat stream (status 200 + in-band error frames).
+ *
  * NOTE: keys are NEVER taken out of rotation (no dead-key quarantine) —
  * every attempt picks fresh from the provider's full key set.
  *
@@ -90,10 +98,31 @@ export interface FailoverOptions {
 	headerWaitLaterMs?: number;
 }
 
+/**
+ * Pre-body decision: what the CLIENT should get as a real HTTP status.
+ * Resolves quickly when the provider answers fast (failure on every key,
+ * client-shaped 4xx, or healthy 2xx headers). The caller races it with a
+ * grace window: on expiry it commits to the heartbeat stream (status 200).
+ */
+export interface FailoverDecision {
+	/** HTTP status for the client; 200 = healthy, switch to streaming */
+	status: number;
+	/** set when status >= 400 — JSON error body text, nothing is streamed */
+	errorText: string | null;
+	/** Retry-After seconds to advertise (429/503): agents honor it */
+	retryAfterSeconds: number | null;
+}
+
 const DEFAULT_HEADER_WAIT_FIRST_MS = 100_000;
 const DEFAULT_HEADER_WAIT_LATER_MS = 60_000;
 /** cap on key attempts within the route (bounds worst-case header-wait) */
 const MAX_KEY_ATTEMPTS = 3;
+/** Retry-After advertised when the upstream gives no better hint */
+const RETRY_AFTER_BUSY_S = 20;
+const RETRY_AFTER_UNAVAILABLE_S = 30;
+/** how long the caller waits for a fast pre-body decision before committing
+ *  to the durable heartbeat stream (slow-but-healthy providers) */
+export const DECISION_GRACE_MS = 5_000;
 
 // Neutral client-facing failure texts — never reveal provider internals
 // (key rejections, credits, provider codes). Exact reasons live in trace.
@@ -108,11 +137,34 @@ interface AttemptFailure {
 	message: string;
 	/** auth-class failure (401/402/403) — another key of the route was tried */
 	keyRejected?: boolean;
+	/** seconds from the upstream's Retry-After header (429/503) */
+	retryAfter?: number;
+}
+
+/** One-shot client-facing error body in the caller's wire shape */
+function errorJson(wire: Wire, kind: FinalErrorKind, message: string, status: number): string {
+	if (wire === 'anthropic') {
+		const type = kind === 'provider_rate_limited' ? 'rate_limit_error'
+			: kind === 'client_request_error' ? 'invalid_request_error'
+				: 'overloaded_error';
+		return JSON.stringify({ type: 'error', error: { type, message } });
+	}
+	if (wire === 'gemini') {
+		return JSON.stringify({ error: { code: status, message, status: kind } });
+	}
+	const type = kind === 'provider_rate_limited' ? 'rate_limit_exceeded'
+		: kind === 'client_request_error' ? 'invalid_request_error'
+			: 'service_unavailable';
+	return JSON.stringify({ error: { message, type, code: kind } });
 }
 
 export function startFailoverStream(opts: FailoverOptions): {
 	body: ReadableStream<Uint8Array>;
 	outcome: Promise<FailoverOutcome>;
+	decision: Promise<FailoverDecision>;
+	/** commit to the durable heartbeat stream (prelude byte + heartbeats) —
+	 *  the caller invokes it when the decision said 200 or grace lapsed */
+	begin(): void;
 } {
 	const encoder = new TextEncoder();
 	const outcome: FailoverOutcome = {
@@ -136,13 +188,30 @@ export function startFailoverStream(opts: FailoverOptions): {
 		resolveOutcome(outcome);
 	};
 
+	let decisionDone = false;
+	let resolveDecision!: (d: FailoverDecision) => void;
+	const decisionPromise = new Promise<FailoverDecision>((r) => (resolveDecision = r));
+	const decide = (d: FailoverDecision) => {
+		if (decisionDone) return;
+		decisionDone = true;
+		resolveDecision(d);
+	};
+
+	let committed = false;
+	let runDone = false;
 	let closed = false;
 	let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
 	let currentAbort: AbortController | null = null;
 	let heartbeat: ReturnType<typeof setInterval> | null = null;
 
-	/** write to client; false = client gone (keep-alive or content) */
+	/** bytes produced before the client Response exists (200 decided, caller
+	 *  not committed yet) — flushed in order when the stream begins */
+	const pending: string[] = [];
+
+	/** write to client; false = client gone (keep-alive or content).
+	 *  Pre-commit the client has no Response yet — bytes are buffered. */
 	const rawPush = (s: string): boolean => {
+		if (!committed) { pending.push(s); return true; }
 		if (closed || !controllerRef) return false;
 		try {
 			controllerRef.enqueue(encoder.encode(s));
@@ -172,25 +241,47 @@ export function startFailoverStream(opts: FailoverOptions): {
 		}
 	}
 
-	const prelude = opts.mode === 'sse' ? ': open\n\n' : ' ';
+	function beginStream() {
+		if (committed) return;
+		committed = true;
+		// enqueue directly: `closed` may already be set if run() finished
+		// while the caller was between decision and commit (fast response)
+		const c = controllerRef;
+		if (c) {
+			try {
+				c.enqueue(encoder.encode(opts.mode === 'sse' ? ': open\n\n' : ' '));
+				for (const p of pending.splice(0)) c.enqueue(encoder.encode(p));
+			} catch { /* client gone */ }
+		}
+		pending.length = 0;
+		if (runDone) {
+			try { c?.close(); } catch { /* already closed */ }
+			return;
+		}
+		heartbeat = setInterval(keepAlive, HEARTBEAT_MS);
+	}
 
 	const body = new ReadableStream<Uint8Array>({
 		start(controller) {
 			controllerRef = controller;
-			// first byte IMMEDIATELY — Cloudflare's 524 clock dies here
-			rawPush(prelude);
-			heartbeat = setInterval(keepAlive, HEARTBEAT_MS);
-			void run().finally(() => {
-				stopHeartbeat();
-				closed = true;
-				try { controller.close(); } catch { /* already closed */ }
-				finish();
-			});
+		},
+		// the caller only attaches the body to a Response when the decision
+		// said 200 or the grace window lapsed — first pull = commit to streaming
+		pull() {
+			beginStream();
 		},
 		cancel() {
+			// only reachable once the body is attached (post-commit)
 			onClientGone();
-			finish();
 		},
+	});
+
+	void run().finally(() => {
+		stopHeartbeat();
+		runDone = true;
+		closed = true;
+		try { if (committed) controllerRef?.close(); } catch { /* already closed */ }
+		finish();
 	});
 
 	async function run() {
@@ -208,15 +299,15 @@ export function startFailoverStream(opts: FailoverOptions): {
 			if (!outcome.clientGone) {
 				const keys = await opts.deps.loadKeys(route).catch(() => [] as ProviderKeyRow[]);
 				const tried = new Set<string>();
+				if (keys.length === 0) {
+					sawNoKeys = true;
+					outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: no live keys`);
+				}
 				for (let guard = 0; guard < MAX_KEY_ATTEMPTS; guard++) {
 					if (outcome.clientGone) return;
 					const candidates = keys.filter((k) => !tried.has(k.id));
 					const chosen = pickWeighted(candidates);
 				if (!chosen) {
-					if (tried.size === 0) {
-						sawNoKeys = true;
-						outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: no live keys`);
-					}
 					break; // out of keys for this route
 				}
 				tried.add(chosen.id);
@@ -242,7 +333,10 @@ export function startFailoverStream(opts: FailoverOptions): {
 		}
 
 		// Every key exhausted and (by construction) zero content bytes reached
-		// the client — surface the last failure as an in-band error frame.
+		// the client — surface the last failure as a REAL retryable HTTP status
+		// (429/503 + Retry-After) so SDKs and agent loops retry; when the
+		// heartbeat response was already committed the in-band error frame
+		// serves the same message instead.
 		if (!outcome.clientGone) {
 			const kind: FinalErrorKind = sawNoKeys && !lastFailure
 				? 'no_provider_keys'
@@ -251,10 +345,13 @@ export function startFailoverStream(opts: FailoverOptions): {
 					: sawRateLimit
 						? 'provider_rate_limited'
 						: lastFailure?.kind ?? 'upstream_failed';
-			const message =
-				lastFailure?.message ??
-				MSG_UNAVAILABLE;
-			outcome.finalError = { kind, status: lastFailure?.status ?? 502, message };
+			const message = kind === 'provider_rate_limited' ? MSG_BUSY : MSG_UNAVAILABLE;
+			const httpStatus = kind === 'provider_rate_limited' ? 429 : 503;
+			const retryAfter = kind === 'provider_rate_limited'
+				? Math.max(lastFailure?.retryAfter ?? 0, RETRY_AFTER_BUSY_S)
+				: RETRY_AFTER_UNAVAILABLE_S;
+			outcome.finalError = { kind, status: httpStatus, message };
+			decide({ status: httpStatus, errorText: errorJson(opts.clientWire, kind, message, httpStatus), retryAfterSeconds: retryAfter });
 			pushTerminalError(kind, message);
 		}
 	}
@@ -339,8 +436,11 @@ export function startFailoverStream(opts: FailoverOptions): {
 			return { done: false, failure: { kind: 'provider_keys_rejected', status: res.status, message: MSG_UNAVAILABLE, keyRejected: true } };
 		}
 		if (res.status === 429) {
-			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited`);
-			return { done: false, failure: { kind: 'provider_rate_limited', status: 429, message: MSG_BUSY } };
+			const raRaw = Number(res.headers.get('retry-after'));
+			const ra = Number.isFinite(raRaw) && raRaw > 0 && raRaw < 3600 ? Math.round(raRaw) : undefined;
+			try { res.body?.cancel(); } catch { /* ignore */ }
+			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: 429 rate-limited${ra ? ` retry-after ${ra}s` : ''}`);
+			return { done: false, failure: { kind: 'provider_rate_limited', status: 429, message: MSG_BUSY, retryAfter: ra } };
 		}
 		if ([400, 404, 422].includes(res.status)) {
 			// client-shaped error: failover can't help. Pass through only
@@ -350,13 +450,18 @@ export function startFailoverStream(opts: FailoverOptions): {
 			const safe = clientSafeReason(text);
 			outcome.finalError = { kind: 'client_request_error', status: res.status, message: safe ?? `The model rejected this request (${res.status}). Please review your request parameters.` };
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)}: HTTP ${res.status} (client-shaped)${safe ? '' : ` — ${truncateMsg(text)}`}`);
-			if (!outcome.clientGone) pushTerminalError('upstream_failed', outcome.finalError.message);
+			decide({ status: res.status, errorText: errorJson(opts.clientWire, 'client_request_error', outcome.finalError.message, res.status), retryAfterSeconds: null });
+			pushTerminalError('upstream_failed', outcome.finalError.message);
 			return { done: true, failure: null };
 		}
 		if (res.status >= 500) {
+			try { res.body?.cancel(); } catch { /* ignore */ }
 			outcome.trace.push(`route ${route.provider_id.slice(0, 8)} key ${key.id.slice(0, 8)}: HTTP ${res.status}`);
 			return { done: false, failure: { kind: 'upstream_failed', status: 502, message: MSG_UNAVAILABLE } };
 		}
+
+		// ---- headers OK (2xx): healthy — the decision gate answers 200 now ----
+		decide({ status: 200, errorText: null, retryAfterSeconds: null });
 
 		// ---- headers OK (2xx): stream through the mode pump ----
 		// mid-stream idle watchdog: a stalled (not dropped) connection never
@@ -456,16 +561,24 @@ export function startFailoverStream(opts: FailoverOptions): {
 		if (p.timedOut) outcome.timedOut = true;
 	}
 
-	function pushTerminalError(kind: string, message: string) {
+	/** terminal in-band error (already-committed stream). Provider-health
+	 *  kinds use the wire's RETRYABLE error codes (Anthropic agents loop on
+	 *  overloaded_error / rate_limit_error) so clients can auto-retry. */
+	function pushTerminalError(kind: FinalErrorKind | string, message: string) {
 		if (opts.mode === 'sse') {
-			pushContent(errorFrame(opts.clientWire, kind, message));
+			const code = kind === 'provider_rate_limited'
+				? 'rate_limit_error'
+				: kind === 'client_request_error'
+					? 'invalid_request_error'
+					: 'overloaded_error';
+			pushContent(errorFrame(opts.clientWire, code, message));
 			if (opts.clientWire === 'openai') pushContent('data: [DONE]\n\n');
 		} else {
 			pushContent(JSON.stringify({ error: { message, type: kind, code: kind } }));
 		}
 	}
 
-	return { body, outcome: outcomePromise };
+	return { body, outcome: outcomePromise, decision: decisionPromise, begin: beginStream };
 }
 
 function isStallAbort(signal: AbortSignal): boolean {

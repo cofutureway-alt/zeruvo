@@ -26,7 +26,7 @@ import {
   type ProviderKeyRow,
 } from './keys';
 import type { Wire } from './stream';
-import { startFailoverStream, type RouteRow, type FailoverDeps, type FailoverOutcome } from './failover';
+import { startFailoverStream, DECISION_GRACE_MS, type RouteRow, type FailoverDeps, type FailoverOutcome } from './failover';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -36,6 +36,8 @@ export interface Env {
   /** tunable header-wait deadlines for the failover stream (ms) */
   GATEWAY_HEADER_WAIT_FIRST_MS?: string;
   GATEWAY_HEADER_WAIT_LATER_MS?: string;
+  /** ms to wait for a fast pre-body HTTP decision before heartbeat-streaming */
+  GATEWAY_DECISION_GRACE_MS?: string;
 }
 
 /** Row shape of the resolve_model_v2 RPC. */
@@ -337,7 +339,7 @@ async function handleChat(
 
   const isStream = clientWire === 'gemini' ? !!geminiWantsStream : neutral.stream;
   const mode = isStream ? 'sse' : clientWire === 'gemini' ? 'buffer' : 'aggregate';
-  const { body, outcome } = startFailoverStream({
+  const { body, outcome, decision, begin } = startFailoverStream({
     clientWire,
     mode,
     route,
@@ -346,6 +348,8 @@ async function handleChat(
     headerWaitLaterMs: Number(envNow().GATEWAY_HEADER_WAIT_LATER_MS) || undefined,
   });
 
+  // Settle is registered BEFORE the decision wait — every path (early HTTP
+  // error or committed stream) must release the reservation exactly once.
   ctx.waitUntil(
     outcome
       .then((o) => {
@@ -364,6 +368,26 @@ async function handleChat(
       })
       .catch((e) => console.error('settle failed', e)),
   );
+
+  // Decision gate: if the provider fails fast (auth/5xx/429 on every key)
+  // or answers with a client-shaped 4xx, return a REAL HTTP status so SDKs
+  // and agent loops retry per Retry-After. Only a provider still silent
+  // after the grace window gets the durable heartbeat stream.
+  const graceMs = Number(envNow().GATEWAY_DECISION_GRACE_MS) || DECISION_GRACE_MS;
+  const decided = await Promise.race([
+    decision,
+    new Promise<null>((r) => setTimeout(() => r(null), graceMs)),
+  ]);
+  if (decided && decided.status >= 400) {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+      'Access-Control-Expose-Headers': 'Retry-After',
+    };
+    if (decided.retryAfterSeconds) headers['Retry-After'] = String(decided.retryAfterSeconds);
+    return new Response(decided.errorText, { status: decided.status, headers });
+  }
+  begin();
 
   return new Response(body, {
     status: 200,
@@ -420,16 +444,10 @@ function logMeta(
     cache_write_tokens: usage.cacheWrite,
   };
   if (o.finalError) {
-    const statusMap: Record<string, number> = {
-      no_provider_keys: 503,
-      provider_keys_rejected: 502,
-      provider_rate_limited: 429,
-      gateway_timeout: 504,
-      upstream_failed: 502,
-      client_request_error: o.finalError.status,
-    };
+    // finalError.status is already the real HTTP status the client got
+    // (decision gate: 429/503/4xx; committed stream: neutral 502/504)
     return {
-      status: statusMap[o.finalError.kind] ?? 502,
+      status: o.finalError.status,
       error_code: o.finalError.kind === 'client_request_error' ? 'upstream_failed' : o.finalError.kind,
       ...base,
     };

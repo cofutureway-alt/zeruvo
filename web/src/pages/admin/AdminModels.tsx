@@ -705,17 +705,19 @@ function MetaModal({ model, providers, onClose }: { model: AdminModelRow; provid
 	const [providerId, setProviderId] = useState(model.provider_id ?? '');
 	const [vendorSlug, setVendorSlug] = useState(model.vendor_slug ?? '');
 	const [vendors, setVendors] = useState<VendorRow[]>([]);
+	const [systemPrompt, setSystemPrompt] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// max_output_tokens + current category aren't in the view row — fetch them
+	// max_output_tokens, category and system_prompt aren't in the view row — fetch them
 	useEffect(() => {
-		void supabase.from('models').select('max_output_tokens,category_id,provider_id,vendor_slug').eq('id', model.id).maybeSingle()
+		void supabase.from('models').select('max_output_tokens,category_id,provider_id,vendor_slug,system_prompt').eq('id', model.id).maybeSingle()
 			.then(({ data }) => {
 				setMaxOut(data?.max_output_tokens != null ? String(data.max_output_tokens) : '');
 				setCategoryId(data?.category_id ?? '');
 				setProviderId((data as { provider_id: string | null } | null)?.provider_id ?? '');
 				setVendorSlug((data as { vendor_slug: string | null } | null)?.vendor_slug ?? '');
+				setSystemPrompt((data as { system_prompt: string | null } | null)?.system_prompt ?? '');
 			});
 	}, [model.id]);
 
@@ -760,6 +762,7 @@ function MetaModal({ model, providers, onClose }: { model: AdminModelRow; provid
 			category_id: categoryId || null,
 			provider_id: providerId || null,
 			vendor_slug: vendorSlug || null,
+			...(model.is_custom ? { system_prompt: systemPrompt.trim() || null } : {}),
 		}).eq('id', model.id);
 		if (error) setError(error.message);
 		else onClose();
@@ -809,6 +812,19 @@ function MetaModal({ model, providers, onClose }: { model: AdminModelRow; provid
 						{categories.map((c) => <option key={c.id} value={c.id}>{c.name.replace(/^vendor:/, '')}</option>)}
 					</select>
 				</label>
+				{model.is_custom && (
+					<label className="mt-3 block text-xs">
+						<span className="text-muted-foreground">System prompt (prepended to every request on this custom model — empty = none)</span>
+						<textarea
+							value={systemPrompt}
+							onChange={(e) => setSystemPrompt(e.target.value)}
+							rows={5}
+							dir="ltr"
+							placeholder="You are a support agent for..."
+							className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-cyan-500"
+						/>
+					</label>
+				)}
 				<label className="mt-5 flex items-center gap-2 text-sm">
 					<input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} className="accent-cyan-500" />
 					<EyeOff size={13} className="text-cyan-400" /> Visible to users
