@@ -566,9 +566,24 @@ async function listModels(request: Request): Promise<Response> {
   // under their public name when their parent is in the plan OR when they
   // are wallet-billable (PAYG) — the latter are sold from the wallet, not
   // a plan, and must still be discoverable by clients.
+  // Key scoping (api_allowed_models) applies here too: a key restricted
+  // to a model subset must only see that subset — same rule the chat path
+  // enforces (parent-or-alias accepted).
   const allowed = auth.ctx.allowed_models ?? [];
+  const keyAllowed = auth.ctx.api_allowed_models ?? [];
   const data = (enabled ?? [])
-    .filter((m) => !allowed.length || allowed.includes(m.id) || (m.parent_model_id && (allowed.includes(m.parent_model_id) || m.payg_enabled)))
+    .filter((m) => {
+      if (allowed.length && !allowed.includes(m.id) && !(m.parent_model_id && (allowed.includes(m.parent_model_id) || m.payg_enabled))) {
+        return false;
+      }
+      if (keyAllowed.length && !keyAllowed.includes(m.id) && !(m.parent_model_id && keyAllowed.includes(m.parent_model_id))) {
+        return false;
+      }
+      return true;
+    })
+    // one entry per public model id: the same upstream id can exist on
+    // several provider rows; agents expect a catalog without duplicates
+    .filter((m, i, arr) => arr.findIndex((x) => x.upstream_model_id === m.upstream_model_id) === i)
     .map((m) => ({
       id: m.upstream_model_id,
       object: 'model',

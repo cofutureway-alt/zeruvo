@@ -27,6 +27,7 @@ const todo = [
   '20260921160000_alias_wallet_catalog.sql',
   '20260922000000_retire_dead_key_quarantine.sql',
   '20260923000000_nullsafe_prices_and_payg_fill.sql',
+  '20260923120000_one_enabled_copy_per_model.sql',
 ];
 
 async function query(sql) {

@@ -208,16 +208,27 @@ export function fromAnthropic(body: Record<string, unknown>): NeutralRequest {
 
 /**
  * OpenAI accepts the neutral shape directly (it IS the OpenAI wire).
- * max_tokens: agents (Cline, Cursor…) frequently omit it; sending a small
+ * max_tokens: agents (Cline, Cursor...) frequently omit it; sending a small
  * default starves reasoning models mid-turn (finish_reason=length →
- * "Model reached the maximum output token limit"). When the client
- * didn't specify one, omit the field entirely and let the provider use
- * its own default — which scales with the model.
+ * "Model reached the maximum output token limit"). When the client didn't
+ * specify one, omit the field entirely and let the provider use its own
+ * default — which scales with the model.
+ *
+ * The neutral slot `system` (which carries a custom model's admin-defined
+ * system prompt prepended to the client's) must be emitted as a
+ * leading system message — dropping it made alias models answer as their
+ * base model and silently ignored the identity prompt.
  */
 export function toOpenAI(req: NeutralRequest): Record<string, unknown> {
+	let messages = req.messages;
+	if (req.system) {
+		const hasSystemMsg = messages.some((m) => m.role === 'system');
+		if (!hasSystemMsg) messages = [{ role: 'system', content: req.system }, ...messages];
+		else messages = messages.map((m) => (m.role === 'system' ? { ...m, content: req.system as string } : m));
+	}
 	const out: Record<string, unknown> = {
 		model: req.model,
-		messages: req.messages,
+		messages,
 		stream: req.stream,
 	};
 	if (req.max_tokens > 0) out.max_tokens = req.max_tokens;

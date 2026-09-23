@@ -70,16 +70,45 @@ export default function Keys() {
 		void load();
 	}, [load]);
 
+	// The picker lists only the models THIS user can actually call:
+	// their active plan's models (or every priced model when the plan
+	// has no explicit list), plus any PAYG model (wallet-billable), plus
+	// custom aliases entitled through a parent that is in the plan.
 	useEffect(() => {
 		if (!open) return;
-		void supabase
-			.from('models_public_view')
-			.select('id,display_name,upstream_model_id')
-			.eq('enabled_for_users', true)
-			.eq('is_priced', true)
-			.order('display_name')
-			.limit(400)
-			.then(({ data }) => setModels((data ?? []) as PickModel[]));
+		void (async () => {
+			const { data: { user } } = await supabase.auth.getUser();
+			let planModelIds: Set<string> | null = null;
+			if (user) {
+				const { data: subs } = await supabase
+					.from('subscriptions')
+					.select('plan_id')
+					.eq('user_id', user.id)
+					.eq('status', 'active')
+					.gt('expires_at', new Date().toISOString())
+					.order('expires_at', { ascending: false })
+					.limit(1);
+				const planId = subs?.[0]?.plan_id;
+				if (planId) {
+					const { data: pm } = await supabase.from('plan_models').select('model_id').eq('plan_id', planId);
+					planModelIds = new Set((pm ?? []).map((r: { model_id: string }) => r.model_id));
+				}
+			}
+			const { data } = await supabase
+				.from('models_public_view')
+				.select('id,display_name,upstream_model_id,payg_enabled,parent_model_id')
+				.eq('is_priced', true)
+				.order('display_name')
+				.limit(1000);
+			const all = (data ?? []) as (PickModel & { payg_enabled: boolean; parent_model_id: string | null })[];
+			const mine = all.filter(
+				(m) => m.payg_enabled
+					|| !planModelIds || planModelIds.size === 0
+					|| planModelIds.has(m.id)
+					|| (m.parent_model_id != null && planModelIds.has(m.parent_model_id)),
+			);
+			setModels(mine);
+		})();
 	}, [open]);
 
 	const filteredModels = useMemo(() => {
