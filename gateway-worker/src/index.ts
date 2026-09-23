@@ -278,18 +278,13 @@ async function handleChat(
   }
   const upstreamModel = resolved.upstream_id;
 
-  // plan/model gating — a custom ALIAS model is NOT gated by the plan list
-  // here: entitlement (plan membership if any, otherwise PAYG from the
-  // wallet) is decided atomically by reserve_request, so a wallet-only
-  // alias isn't rejected with model_not_in_plan before the billing path.
-  // Normal (non-alias) models keep the plan gate.
-  const allowed = auth.ctx.allowed_models ?? [];
-  const isAlias = resolved.parent_model_id != null;
+  // plan/model gating: NONE at the worker — reserve_request is the single
+  // source of truth (plan if the plan lists it, otherwise PAYG from the
+  // wallet, else a clear 402/403). A pre-gate here was 403ing plan users
+  // out of wallet-billable models (own balance must work everywhere).
+  // Key-level scoping (api_allowed_models) still applies: a key restricted
+  // to a model subset may only call that subset (parent-or-alias accepted).
   const gateId = resolved.parent_model_id ?? resolved.model_id;
-  if (!isAlias && allowed.length && !allowed.includes(resolved.model_id)) {
-    logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_in_plan', model_id: resolved.model_id, upstream_model: upstreamModel });
-    return json({ error: { type: 'model_not_in_plan', message: 'Model not included in your plan' } }, 403);
-  }
   const keyAllowed = auth.ctx.api_allowed_models ?? [];
   if (keyAllowed.length && !keyAllowed.includes(gateId) && !keyAllowed.includes(resolved.model_id)) {
     logRejection(ctx, auth.ctx.user_id, startedAt, { api_key_id: auth.ctx.api_key_id, status: 403, error_code: 'model_not_allowed_for_key', model_id: resolved.model_id, upstream_model: upstreamModel });
@@ -576,20 +571,18 @@ async function listModels(request: Request): Promise<Response> {
     + '&select=id,upstream_model_id,parent_model_id,context_window,display_name,vendor_slug,payg_enabled,input_price_per_m,output_price_per_m,input_modalities,output_modalities,supports_reasoning',
   );
   // plan gating: allowed_models is the plan's model list; empty = no
-  // restriction, so every enabled model is listed. Custom aliases list
-  // under their public name when their parent is in the plan OR when they
-  // are wallet-billable (PAYG) — the latter are sold from the wallet, not
-  // a plan, and must still be discoverable by clients.
-  // Key scoping (api_allowed_models) applies here too: a key restricted
-  // to a model subset must only see that subset — same rule the chat path
-  // enforces (parent-or-alias accepted).
+  // restriction, so every enabled model is listed. Mirrors the chat gate
+  // (which no longer pre-gates plans): show what the key can call —
+  // plan-covered (self or alias parent), or wallet-billable PAYG models,
+  // plus scoped keys. Deduped: the same public id exists per provider row.
   const allowed = auth.ctx.allowed_models ?? [];
   const keyAllowed = auth.ctx.api_allowed_models ?? [];
   const data = (enabled ?? [])
     .filter((m) => {
-      if (allowed.length && !allowed.includes(m.id) && !(m.parent_model_id && (allowed.includes(m.parent_model_id) || m.payg_enabled))) {
-        return false;
-      }
+      const inPlan = !allowed.length
+        || allowed.includes(m.id)
+        || (m.parent_model_id != null && allowed.includes(m.parent_model_id));
+      if (!inPlan && !m.payg_enabled) return false;
       if (keyAllowed.length && !keyAllowed.includes(m.id) && !(m.parent_model_id && keyAllowed.includes(m.parent_model_id))) {
         return false;
       }

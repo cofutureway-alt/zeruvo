@@ -113,8 +113,8 @@ export interface FailoverDecision {
 	retryAfterSeconds: number | null;
 }
 
-const DEFAULT_HEADER_WAIT_FIRST_MS = 100_000;
-const DEFAULT_HEADER_WAIT_LATER_MS = 60_000;
+const DEFAULT_HEADER_WAIT_FIRST_MS = 150_000;
+const DEFAULT_HEADER_WAIT_LATER_MS = 90_000;
 /** cap on key attempts within the route (bounds worst-case header-wait) */
 const MAX_KEY_ATTEMPTS = 3;
 /** Retry-After advertised when the upstream gives no better hint */
