@@ -158,7 +158,9 @@ export function ModelCard({ model, showAdminBadges = false }: { model: ModelCard
   const crP = model.cache_read_price != null ? Number(model.cache_read_price) : null;
   const hasPrices = inP != null || outP != null;
   const mult = Number(model.usage_multiplier) || 0;
-  const isFree = (inP === 0 && outP === 0) || (model.tags ?? []).includes('free');
+  // Free = genuinely $0 on the wallet (explicit 0 pricing). A marketing
+  // 'free' tag on a PAID model must never render the badge.
+  const isFree = inP === 0 && outP === 0;
   const available = model.enabled_for_users && (model.is_priced || showAdminBadges);
 
   return (
